@@ -189,9 +189,15 @@ class TalkingObjectsApp {
     }
     
     async init() {
-        // Camera controls
-        document.getElementById('startBtn').addEventListener('click', () => this.startCamera());
-        document.getElementById('stopBtn').addEventListener('click', () => this.stopCamera());
+        // Video toggle button (merged Start/Stop functionality)
+        const videoToggleBtn = document.getElementById('videoToggleBtn');
+        videoToggleBtn.addEventListener('click', () => {
+            if (this.isRunning) {
+                this.stopCamera();
+            } else {
+                this.startCamera();
+            }
+        });
         
         // Settings panel
         document.getElementById('settingsBtn').addEventListener('click', () => {
@@ -256,7 +262,7 @@ class TalkingObjectsApp {
             
             if (statusEl) statusEl.textContent = '✓ Model ready';
             if (statusEl) statusEl.style.color = '#4ade80';
-            document.getElementById('startBtn').disabled = false;
+            // Video button is ready to use
         } catch (error) {
             console.error('Error loading model:', error);
             const errorMsg = error.message || 'Could not load object detection model.';
@@ -267,8 +273,9 @@ class TalkingObjectsApp {
             }
             
             alert(`${errorMsg}\n\nTroubleshooting:\n1. Check your internet connection\n2. The model needs to download (~30MB)\n3. Try refreshing the page\n4. Check browser console for details`);
-            document.getElementById('startBtn').textContent = 'Start Camera (Model Failed)';
-            document.getElementById('startBtn').disabled = true;
+            const videoToggleBtn = document.getElementById('videoToggleBtn');
+            videoToggleBtn.querySelector('span:last-child').textContent = 'Model Failed';
+            videoToggleBtn.disabled = true;
         }
     }
     
@@ -293,8 +300,10 @@ class TalkingObjectsApp {
                 this.processVideo();
             });
             
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('stopBtn').disabled = false;
+            // Update video toggle button state
+            const videoToggleBtn = document.getElementById('videoToggleBtn');
+            videoToggleBtn.classList.add('active');
+            videoToggleBtn.querySelector('span:last-child').textContent = 'Stop Video';
             this.isRunning = true;
         } catch (error) {
             console.error('Error accessing camera:', error);
@@ -317,8 +326,10 @@ class TalkingObjectsApp {
         this.updateObjectsDisplay();
         this.clearOverlay();
         
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
+        // Update video toggle button state
+        const videoToggleBtn = document.getElementById('videoToggleBtn');
+        videoToggleBtn.classList.remove('active');
+        videoToggleBtn.querySelector('span:last-child').textContent = 'Start Video';
         this.isRunning = false;
     }
     
