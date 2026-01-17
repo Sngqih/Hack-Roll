@@ -1,0 +1,97 @@
+# Cursor Rules for Hack-Roll Project
+
+## Code Quality Standards
+
+### Input Validation
+- **Always validate user inputs** before processing
+- Check for null, undefined, empty strings, and invalid types
+- Validate data types and ranges (e.g., numbers within expected bounds)
+- Sanitize user inputs to prevent XSS and injection attacks
+- Use type checking and validation libraries when appropriate
+- Validate file uploads (type, size, format) before processing
+- Validate API responses and external data sources
+
+### Authentication Checks
+- **Always verify authentication** before allowing access to protected resources
+- Check user permissions and roles before sensitive operations
+- Validate session tokens and authentication credentials
+- Implement proper session management and timeout handling
+- Use secure authentication methods (e.g., JWT, OAuth)
+- Never trust client-side authentication checks alone
+- Log authentication failures for security monitoring
+
+### Error Handling
+- **Always implement comprehensive error handling** for all operations
+- Use try-catch blocks for async operations and potential failure points
+- Provide meaningful error messages to users (without exposing sensitive info)
+- Log errors with appropriate detail levels for debugging
+- Handle edge cases and unexpected scenarios gracefully
+- Implement fallback mechanisms when operations fail
+- Use proper HTTP status codes for API responses
+- Never expose internal error details to end users
+- Implement retry logic for transient failures
+- Validate error conditions before attempting operations
+
+## Best Practices
+
+### General
+- Write defensive code that handles unexpected inputs gracefully
+- Always check for null/undefined before accessing object properties
+- Use optional chaining (?.) and nullish coalescing (??) operators
+- Implement proper logging for debugging and monitoring
+- Follow the principle of least privilege for access control
+- Keep error messages user-friendly but informative
+
+### Security
+- Never log sensitive information (passwords, tokens, personal data)
+- Sanitize all user inputs before displaying or storing
+- Use parameterized queries for database operations
+- Implement rate limiting for API endpoints
+- Validate and sanitize file uploads
+- Use HTTPS for all network communications
+
+### Code Examples
+
+```javascript
+// Good: Input validation
+function processUserInput(input) {
+    if (!input || typeof input !== 'string') {
+        throw new Error('Invalid input: expected non-empty string');
+    }
+    if (input.length > MAX_LENGTH) {
+        throw new Error(`Input exceeds maximum length of ${MAX_LENGTH}`);
+    }
+    // Sanitize input
+    const sanitized = input.trim().replace(/[<>]/g, '');
+    return sanitized;
+}
+
+// Good: Authentication check
+async function accessProtectedResource(userId, resourceId) {
+    if (!userId || !isAuthenticated(userId)) {
+        throw new Error('Unauthorized: User not authenticated');
+    }
+    if (!hasPermission(userId, resourceId)) {
+        throw new Error('Forbidden: User lacks required permissions');
+    }
+    // Proceed with operation
+}
+
+// Good: Error handling
+async function performOperation(data) {
+    try {
+        validateInput(data);
+        const result = await riskyOperation(data);
+        return { success: true, data: result };
+    } catch (error) {
+        console.error('Operation failed:', error);
+        // Log error details for debugging
+        logger.error('Operation failed', { error: error.message, stack: error.stack });
+        // Return user-friendly error
+        return { 
+            success: false, 
+            error: 'Operation could not be completed. Please try again.' 
+        };
+    }
+}
+```
