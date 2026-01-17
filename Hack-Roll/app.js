@@ -243,8 +243,21 @@ class TalkingObjectsApp {
         // Load model without blocking UI/camera startup
         this.waitForTensorFlow()
             .then(() => this.loadModel())
+            .then(() => {
+                const statusEl = document.getElementById('loadingStatus');
+                if (statusEl) {
+                    statusEl.textContent = '✓ Model ready';
+                    statusEl.style.color = '#4ade80';
+                }
+                console.log('App fully initialized!');
+            })
             .catch((error) => {
                 console.error('Model init failed:', error);
+                const statusEl = document.getElementById('loadingStatus');
+                if (statusEl) {
+                    statusEl.textContent = '✗ Model failed. Check console.';
+                    statusEl.style.color = '#ef4444';
+                }
             });
     }
     
@@ -284,20 +297,7 @@ class TalkingObjectsApp {
             
             if (statusEl) statusEl.textContent = '✓ Model ready';
             if (statusEl) statusEl.style.color = '#4ade80';
-<<<<<<< HEAD
             // Video button is ready to use
-=======
-            const startBtn = document.getElementById('startBtn');
-            if (startBtn) {
-                startBtn.textContent = 'Start Camera';
-                startBtn.disabled = false;
-            }
-            const videoToggleBtn = document.getElementById('videoToggleBtn');
-            if (videoToggleBtn) {
-                const label = videoToggleBtn.querySelector('span:last-child');
-                if (label) label.textContent = 'Start Video';
-            }
->>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
         } catch (error) {
             console.error('Error loading model:', error);
             const errorMsg = error.message || 'Could not load object detection model.';
@@ -308,17 +308,10 @@ class TalkingObjectsApp {
             }
             
             alert(`${errorMsg}\n\nTroubleshooting:\n1. Check your internet connection\n2. The model needs to download (~30MB)\n3. Try refreshing the page\n4. Check browser console for details`);
-<<<<<<< HEAD
             const videoToggleBtn = document.getElementById('videoToggleBtn');
             if (videoToggleBtn) {
                 videoToggleBtn.querySelector('span:last-child').textContent = 'Model Failed';
                 videoToggleBtn.disabled = true;
-=======
-            const startBtn = document.getElementById('startBtn');
-            if (startBtn) {
-                startBtn.textContent = 'Start Camera (Model Failed)';
-                startBtn.disabled = true;
->>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
             }
         }
     }
@@ -344,22 +337,11 @@ class TalkingObjectsApp {
                 this.processVideo();
             }, { once: true });
             
-<<<<<<< HEAD
             // Update video toggle button state
             const videoToggleBtn = document.getElementById('videoToggleBtn');
             if (videoToggleBtn) {
                 videoToggleBtn.classList.add('active');
                 videoToggleBtn.querySelector('span:last-child').textContent = 'Stop Video';
-=======
-            const startBtn = document.getElementById('startBtn');
-            const stopBtn = document.getElementById('stopBtn');
-            if (startBtn) startBtn.disabled = true;
-            if (stopBtn) stopBtn.disabled = false;
-            const videoToggleBtn = document.getElementById('videoToggleBtn');
-            if (videoToggleBtn) {
-                const label = videoToggleBtn.querySelector('span:last-child');
-                if (label) label.textContent = 'Stop Video';
->>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
             }
             this.isRunning = true;
         } catch (error) {
@@ -383,22 +365,11 @@ class TalkingObjectsApp {
         this.updateObjectsDisplay();
         this.clearOverlay();
         
-<<<<<<< HEAD
         // Update video toggle button state
         const videoToggleBtn = document.getElementById('videoToggleBtn');
         if (videoToggleBtn) {
             videoToggleBtn.classList.remove('active');
             videoToggleBtn.querySelector('span:last-child').textContent = 'Start Video';
-=======
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        if (startBtn) startBtn.disabled = false;
-        if (stopBtn) stopBtn.disabled = true;
-        const videoToggleBtn = document.getElementById('videoToggleBtn');
-        if (videoToggleBtn) {
-            const label = videoToggleBtn.querySelector('span:last-child');
-            if (label) label.textContent = 'Start Video';
->>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
         }
         this.isRunning = false;
         this.clearHover();
