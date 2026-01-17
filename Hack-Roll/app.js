@@ -27,6 +27,7 @@ class TalkingObjectsApp {
         this.lastOverlayUpdate = 0;
         this.overlayUpdateInterval = 33; // Update overlay every ~33ms (~30fps) to follow objects smoothly
         this.chatHistory = []; // Store chat history
+        this.objdex = new Map(); // Store saved participants/objects
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -241,6 +242,8 @@ class TalkingObjectsApp {
         this.setupHoverControls();
         this.setupEmojiButtonClicks();
         this.setupChat();
+        this.setupObjdex();
+        this.loadObjdexFromStorage();
         
         // Load model without blocking UI/camera startup
         this.waitForTensorFlow()
@@ -1016,6 +1019,10 @@ class TalkingObjectsApp {
         for (const obj of visibleObjects) {
             const card = document.createElement('div');
             card.className = 'participant-card';
+            // Check if object is already saved in ObjDex
+            const isSaved = this.objdex.has(obj.id);
+            const isVisible = this.isObjectVisible(obj);
+            
             card.innerHTML = `
                 <div class="participant-card-header">
                     <div>
@@ -1025,6 +1032,14 @@ class TalkingObjectsApp {
                     <button class="remove-participant-btn" title="Remove from participant list">×</button>
                 </div>
                 <div class="dialogue">${obj.dialogue ? `"${obj.dialogue}"` : '...'}</div>
+                <div class="participant-card-actions">
+                    <button class="save-to-objdex-btn ${isSaved ? 'saved' : ''} ${!isVisible && !isSaved ? 'disabled' : ''}" 
+                            data-object-id="${obj.id}" 
+                            title="${isSaved ? 'Already saved to ObjDex' : (!isVisible ? 'Object must be in camera view to save' : 'Save to ObjDex')}"
+                            ${!isVisible && !isSaved ? 'disabled' : ''}>
+                        ${isSaved ? '✓ Saved' : (!isVisible ? '⚠️ Not in view' : '📖 Save to ObjDex')}
+                    </button>
+                </div>
             `;
             
             // Make remove button clickable
@@ -1035,6 +1050,43 @@ class TalkingObjectsApp {
                 this.updateObjectsDisplay();
                 this.drawOverlays(); // Redraw to show overlay again
                 console.log(`Removed ${obj.name} from participant list`);
+            });
+            
+            // Make save to ObjDex button clickable
+            const saveBtn = card.querySelector('.save-to-objdex-btn');
+            saveBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (saveBtn.disabled || this.objdex.has(obj.id)) return;
+                
+                // Check if object is visible in camera view
+                if (!this.isObjectVisible(obj)) {
+                    alert(`${obj.name} is not currently visible in the camera view. Please make sure the object is in view before saving to ObjDex.`);
+                    return;
+                }
+                
+                // Capture snapshot and save
+                try {
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = '📸 Capturing...';
+                    await this.saveToObjdex(obj);
+                    // Update button state
+                    saveBtn.classList.add('saved');
+                    saveBtn.classList.remove('disabled');
+                    saveBtn.textContent = '✓ Saved';
+                    saveBtn.title = 'Already saved to ObjDex';
+                    saveBtn.disabled = false;
+                } catch (error) {
+                    console.error('Failed to save to ObjDex:', error);
+                    alert('Failed to capture snapshot. Please try again.');
+                    saveBtn.disabled = false;
+                    // Re-check visibility and update button text
+                    const stillVisible = this.isObjectVisible(obj);
+                    saveBtn.textContent = stillVisible ? '📖 Save to ObjDex' : '⚠️ Not in view';
+                    if (!stillVisible) {
+                        saveBtn.classList.add('disabled');
+                        saveBtn.disabled = true;
+                    }
+                }
             });
             
             display.appendChild(card);
@@ -2065,6 +2117,353 @@ class TalkingObjectsApp {
         }
         
         return "I'm not sure how to respond to that, but I'm here!";
+    }
+    
+    setupObjdex() {
+        const objdexBtn = document.getElementById('objdexBtn');
+        const closeObjdexBtn = document.getElementById('closeObjdexBtn');
+        const downloadObjdexBtn = document.getElementById('downloadObjdexBtn');
+        const uploadObjdexBtn = document.getElementById('uploadObjdexBtn');
+        const objdexFile = document.getElementById('objdexFile');
+        
+        if (objdexBtn) {
+            objdexBtn.addEventListener('click', () => {
+                document.getElementById('objdexPanel').classList.toggle('active');
+                this.updateObjdexDisplay();
+            });
+        }
+        
+        if (closeObjdexBtn) {
+            closeObjdexBtn.addEventListener('click', () => {
+                document.getElementById('objdexPanel').classList.remove('active');
+            });
+        }
+        
+        if (downloadObjdexBtn) {
+            downloadObjdexBtn.addEventListener('click', () => {
+                this.downloadObjdex();
+            });
+        }
+        
+        if (uploadObjdexBtn) {
+            uploadObjdexBtn.addEventListener('click', () => {
+                objdexFile.click();
+            });
+        }
+        
+        if (objdexFile) {
+            objdexFile.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this.uploadObjdex(e.target.files[0]);
+                }
+            });
+        }
+    }
+    
+    isObjectVisible(obj) {
+        if (!obj || !this.video.videoWidth || !this.video.videoHeight) return false;
+        
+        // Check if object is within the video bounds
+        const padding = 10; // Small padding to account for edge cases
+        const minX = -padding;
+        const minY = -padding;
+        const maxX = this.video.videoWidth + padding;
+        const maxY = this.video.videoHeight + padding;
+        
+        // Check if object center is within bounds
+        if (obj.centerX < minX || obj.centerX > maxX || 
+            obj.centerY < minY || obj.centerY > maxY) {
+            return false;
+        }
+        
+        // Check if object bounding box is at least partially visible
+        const objRight = obj.x + obj.width;
+        const objBottom = obj.y + obj.height;
+        
+        // Object is visible if any part of it is within bounds
+        return !(obj.x > maxX || objRight < minX || obj.y > maxY || objBottom < minY);
+    }
+    
+    async captureObjectSnapshot(obj) {
+        if (!this.video.videoWidth || !this.video.videoHeight) {
+            throw new Error('Video not ready');
+        }
+        
+        // Verify object is still detected and has valid coordinates
+        if (!this.objects.has(obj.id)) {
+            throw new Error('Object is no longer detected');
+        }
+        
+        const currentObj = this.objects.get(obj.id);
+        if (!currentObj || !currentObj.width || !currentObj.height || 
+            currentObj.width <= 0 || currentObj.height <= 0) {
+            throw new Error('Object coordinates are invalid');
+        }
+        
+        // Use current object data (in case it moved)
+        // COCO-SSD bbox format: [x, y, width, height] in original video coordinates
+        const objWidth = currentObj.width;
+        const objHeight = currentObj.height;
+        const objX = currentObj.x;  // Top-left X in original video coordinates
+        const objY = currentObj.y;  // Top-left Y in original video coordinates
+        
+        // The video element contains unflipped video data
+        // The CSS transform: scaleX(-1) only affects visual display, not the actual video data
+        // So we can directly use the bbox coordinates to extract from the video
+        
+        // Create canvas for the object snapshot
+        const snapshotCanvas = document.createElement('canvas');
+        snapshotCanvas.width = objWidth;
+        snapshotCanvas.height = objHeight;
+        const snapshotCtx = snapshotCanvas.getContext('2d');
+        
+        // Draw the object region directly from the video using original coordinates
+        // No need to flip X because we're reading from the unflipped video data
+        snapshotCtx.drawImage(
+            this.video,
+            objX, objY, objWidth, objHeight,  // Source rectangle (from unflipped video)
+            0, 0, objWidth, objHeight          // Destination rectangle (to canvas)
+        );
+        
+        // Flip the image horizontally to match what the user sees (video is displayed flipped)
+        // Create a new canvas for the flipped result
+        const flippedCanvas = document.createElement('canvas');
+        flippedCanvas.width = objWidth;
+        flippedCanvas.height = objHeight;
+        const flippedCtx = flippedCanvas.getContext('2d');
+        
+        // Flip horizontally to match the displayed video
+        flippedCtx.translate(flippedCanvas.width, 0);
+        flippedCtx.scale(-1, 1);
+        flippedCtx.drawImage(snapshotCanvas, 0, 0);
+        
+        // Convert to base64
+        return flippedCanvas.toDataURL('image/png');
+    }
+    
+    async saveToObjdex(obj) {
+        if (!obj || !obj.inParticipantList) {
+            throw new Error('Object is not a participant');
+        }
+        
+        // Verify object is still in the objects map (still detected)
+        if (!this.objects.has(obj.id)) {
+            throw new Error('Object is no longer detected. Please ensure the object is visible in the camera view.');
+        }
+        
+        // Get current object state (may have moved)
+        const currentObj = this.objects.get(obj.id);
+        
+        // Check if object is visible
+        if (!this.isObjectVisible(currentObj)) {
+            throw new Error('Object is not visible in camera view');
+        }
+        
+        // Verify object has valid dimensions
+        if (!currentObj.width || !currentObj.height || 
+            currentObj.width <= 0 || currentObj.height <= 0) {
+            throw new Error('Object dimensions are invalid. Please try again.');
+        }
+        
+        // Capture snapshot using current object state
+        const snapshot = await this.captureObjectSnapshot(currentObj);
+        
+        // Create a snapshot of the object data
+        const objdexEntry = {
+            id: obj.id,
+            name: obj.name,
+            className: obj.className || obj.class,
+            emoji: obj.emoji,
+            snapshot: snapshot, // Base64 image data
+            savedAt: new Date().toISOString(),
+            personality: obj.personality ? {
+                emoji: obj.personality.emoji,
+                greetings: obj.personality.greetings,
+                conversations: obj.personality.conversations,
+                responses: obj.personality.responses,
+                random: obj.personality.random
+            } : null
+        };
+        
+        this.objdex.set(obj.id, objdexEntry);
+        this.saveObjdexToStorage();
+        this.updateObjdexDisplay();
+        
+        console.log(`Saved ${obj.name} to ObjDex with snapshot`);
+    }
+    
+    updateObjdexDisplay() {
+        const objdexList = document.getElementById('objdexList');
+        const captureCount = document.getElementById('captureCount');
+        
+        if (!objdexList || !captureCount) return;
+        
+        captureCount.textContent = this.objdex.size;
+        
+        if (this.objdex.size === 0) {
+            objdexList.innerHTML = '<div style="text-align: center; padding: 20px; color: #8e8e8e;">No objects saved yet. Add participants and save them to ObjDex!</div>';
+            return;
+        }
+        
+        objdexList.innerHTML = '';
+        let index = 1;
+        
+        for (const entry of this.objdex.values()) {
+            const item = document.createElement('div');
+            item.className = 'objdex-item';
+            
+            const savedDate = new Date(entry.savedAt);
+            const formattedDate = savedDate.toLocaleDateString();
+            
+            // Use snapshot if available, otherwise fall back to emoji
+            const profileImage = entry.snapshot 
+                ? `<img src="${entry.snapshot}" alt="${entry.name}" class="objdex-profile-image" />`
+                : `<span class="objdex-profile-emoji">${entry.emoji}</span>`;
+            
+            item.innerHTML = `
+                <div class="objdex-item-number">#${index}</div>
+                <div class="objdex-item-profile">${profileImage}</div>
+                <div class="objdex-item-info">
+                    <div class="objdex-item-name">${entry.name}</div>
+                    <div class="objdex-item-stats">
+                        <span>Type: ${this.formatClassLabel(entry.className)}</span>
+                        <span>Saved: ${formattedDate}</span>
+                    </div>
+                </div>
+                <button class="remove-objdex-btn" data-entry-id="${entry.id}" title="Remove from ObjDex">×</button>
+            `;
+            
+            // Add click handler for remove button
+            const removeBtn = item.querySelector('.remove-objdex-btn');
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm(`Remove ${entry.name} from ObjDex?`)) {
+                    this.removeFromObjdex(entry.id);
+                }
+            });
+            
+            objdexList.appendChild(item);
+            index++;
+        }
+    }
+    
+    removeFromObjdex(entryId) {
+        if (this.objdex.has(entryId)) {
+            this.objdex.delete(entryId);
+            this.saveObjdexToStorage();
+            this.updateObjdexDisplay();
+            console.log(`Removed entry ${entryId} from ObjDex`);
+        }
+    }
+    
+    saveObjdexToStorage() {
+        try {
+            const data = Array.from(this.objdex.values());
+            localStorage.setItem('objdex_data', JSON.stringify(data));
+        } catch (error) {
+            console.error('Failed to save ObjDex to storage:', error);
+        }
+    }
+    
+    loadObjdexFromStorage() {
+        try {
+            const stored = localStorage.getItem('objdex_data');
+            if (stored) {
+                const data = JSON.parse(stored);
+                this.objdex.clear();
+                for (const entry of data) {
+                    this.objdex.set(entry.id, entry);
+                }
+                this.updateObjdexDisplay();
+                console.log(`Loaded ${this.objdex.size} objects from ObjDex storage`);
+            }
+        } catch (error) {
+            console.error('Failed to load ObjDex from storage:', error);
+        }
+    }
+    
+    async downloadObjdex() {
+        if (this.objdex.size === 0) {
+            alert('ObjDex is empty! Save some participants first.');
+            return;
+        }
+        
+        try {
+            const zip = new JSZip();
+            const data = Array.from(this.objdex.values());
+            
+            // Add metadata file
+            const metadata = {
+                exportDate: new Date().toISOString(),
+                totalObjects: this.objdex.size,
+                version: '1.0'
+            };
+            zip.file('_metadata.json', JSON.stringify(metadata, null, 2));
+            
+            // Add each object as a separate JSON file
+            for (const entry of data) {
+                const filename = `${entry.className}_${entry.id}.json`;
+                zip.file(filename, JSON.stringify(entry, null, 2));
+            }
+            
+            // Generate zip file
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const date = new Date().toISOString().split('T')[0];
+            a.download = `objdex_${date}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('ObjDex downloaded successfully');
+        } catch (error) {
+            console.error('Failed to download ObjDex:', error);
+            alert('Failed to download ObjDex. Please try again.');
+        }
+    }
+    
+    async uploadObjdex(file) {
+        if (!file || !file.name.endsWith('.zip')) {
+            alert('Please select a valid ObjDex zip file.');
+            return;
+        }
+        
+        try {
+            const zip = await JSZip.loadAsync(file);
+            const files = Object.keys(zip.files);
+            
+            let loadedCount = 0;
+            
+            for (const filename of files) {
+                if (filename === '_metadata.json' || filename.endsWith('/')) continue;
+                
+                const fileData = await zip.files[filename].async('string');
+                const entry = JSON.parse(fileData);
+                
+                // Merge with existing data (update if exists, add if new)
+                if (!this.objdex.has(entry.id)) {
+                    this.objdex.set(entry.id, entry);
+                    loadedCount++;
+                } else {
+                    // Update existing entry
+                    const existing = this.objdex.get(entry.id);
+                    existing.savedAt = entry.savedAt; // Update save time
+                    this.objdex.set(entry.id, existing);
+                }
+            }
+            
+            this.saveObjdexToStorage();
+            this.updateObjdexDisplay();
+            
+            alert(`Successfully loaded ${loadedCount} new object(s) from ObjDex file!`);
+            console.log(`Uploaded ObjDex: ${loadedCount} new objects`);
+        } catch (error) {
+            console.error('Failed to upload ObjDex:', error);
+            alert('Failed to upload ObjDex file. Please check the file format.');
+        }
     }
     
     calculateOverlap(bbox1, bbox2) {

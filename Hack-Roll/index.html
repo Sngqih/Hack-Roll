@@ -74,9 +74,9 @@
             </div>
 
             <div class="controlbar-right">
-                <button class="zoom-control-btn pokedex-btn" id="pokedexBtn">
+                <button class="zoom-control-btn objdex-btn" id="objdexBtn">
                     <span class="icon">📖</span>
-                    <span>PokéDex</span>
+                    <span>ObjDex</span>
                 </button>
                 <button class="zoom-control-btn end-btn" id="endCallBtn">
                     <span>End Call</span>
@@ -116,24 +116,24 @@
             </div>
         </div>
 
-        <!-- PokéDex panel (hidden by default) -->
-        <div class="pokedex-panel" id="pokedexPanel">
-            <div class="pokedex-header">
-                <h3>🔴 PokéDex 🔵</h3>
-                <button class="close-pokedex" id="closePokedexBtn">×</button>
+        <!-- ObjDex panel (hidden by default) -->
+        <div class="objdex-panel" id="objdexPanel">
+            <div class="objdex-header">
+                <h3>🔴 ObjDex 🔵</h3>
+                <button class="close-objdex" id="closeObjdexBtn">×</button>
             </div>
-            <div class="pokedex-content">
-                <div class="pokedex-stats">
+            <div class="objdex-content">
+                <div class="objdex-stats">
                     <div class="stat-item">
-                        <span class="stat-label">Items Captured:</span>
+                        <span class="stat-label">Objects Saved:</span>
                         <span class="stat-value" id="captureCount">0</span>
                     </div>
                 </div>
-                <div id="pokedexList" class="pokedex-list"></div>
-                <div class="pokedex-actions">
-                    <button id="downloadPokedexBtn" class="pill-btn">📥 Download Items</button>
-                    <button id="uploadPokedexBtn" class="pill-btn">📤 Upload Items</button>
-                    <input type="file" id="pokedexFile" accept=".zip" style="display:none;">
+                <div id="objdexList" class="objdex-list"></div>
+                <div class="objdex-actions">
+                    <button id="downloadObjdexBtn" class="pill-btn">📥 Download Objects</button>
+                    <button id="uploadObjdexBtn" class="pill-btn">📤 Upload Objects</button>
+                    <input type="file" id="objdexFile" accept=".zip" style="display:none;">
                 </div>
             </div>
         </div>
