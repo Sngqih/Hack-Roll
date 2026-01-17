@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talking Objects - AI Personality App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗣️ Talking Objects 🤖</h1>
+            <p>Point your camera at objects and discover their personalities!</p>
+            <div id="loadingStatus" style="margin-top: 10px; font-size: 0.9rem; opacity: 0.8;">
+                Loading AI model... Please wait.
+            </div>
+        </header>
+
+        <div class="camera-section">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+            <canvas id="overlay"></canvas>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" class="btn btn-primary">Start Camera</button>
+            <button id="stopBtn" class="btn btn-secondary" disabled>Stop Camera</button>
+            <div class="settings">
+                <label>
+                    <input type="checkbox" id="autoTalk" checked>
+                    Auto-talk mode
+                </label>
+                <label>
+                    Detection Threshold: <input type="range" id="threshold" min="10" max="100" value="50">
+                    <span id="threshValue">50%</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="plants-container" id="objectsList">
+            <h3>Detected Objects:</h3>
+            <div id="objectsDisplay"></div>
+        </div>
+    </div>
+
+    <!-- TensorFlow.js - Load sequentially to ensure proper order -->
+    <script>
+        // Load TensorFlow.js first
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+                document.body.appendChild(script);
+            });
+        }
+        
+        // Load scripts in order
+        async function initScripts() {
+            const statusEl = document.getElementById('loadingStatus');
+            try {
+                if (statusEl) statusEl.textContent = 'Loading TensorFlow.js...';
+                await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0');
+                
+                // Verify TensorFlow loaded
+                if (typeof tf === 'undefined') {
+                    throw new Error('TensorFlow.js did not load correctly');
+                }
+                
+                if (statusEl) statusEl.textContent = 'Loading COCO-SSD model library...';
+                await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2');
+                
+                // Verify COCO-SSD loaded
+                if (typeof cocoSsd === 'undefined') {
+                    throw new Error('COCO-SSD did not load correctly');
+                }
+                
+                if (statusEl) statusEl.textContent = 'Libraries loaded. Initializing app...';
+                // Load app.js after libraries are ready
+                await loadScript('app.js');
+            } catch (error) {
+                console.error('Script loading error:', error);
+                if (statusEl) {
+                    statusEl.textContent = '✗ Failed to load libraries. Check console.';
+                    statusEl.style.color = '#ef4444';
+                }
+                alert('Failed to load required libraries:\n' + error.message + '\n\nPlease check your internet connection and refresh.');
+            }
+        }
+        
+        // Start loading when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initScripts);
+        } else {
+            initScripts();
+        }
+    </script>
+</body>
+</html>
