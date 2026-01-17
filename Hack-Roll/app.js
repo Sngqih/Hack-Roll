@@ -240,9 +240,12 @@ class TalkingObjectsApp {
         this.threshold = 0.5;
         this.setupHoverControls();
         
-        // Wait for TensorFlow.js to be available, then load model
-        await this.waitForTensorFlow();
-        await this.loadModel();
+        // Load model without blocking UI/camera startup
+        this.waitForTensorFlow()
+            .then(() => this.loadModel())
+            .catch((error) => {
+                console.error('Model init failed:', error);
+            });
     }
     
     async waitForTensorFlow() {
@@ -281,7 +284,20 @@ class TalkingObjectsApp {
             
             if (statusEl) statusEl.textContent = '✓ Model ready';
             if (statusEl) statusEl.style.color = '#4ade80';
+<<<<<<< HEAD
             // Video button is ready to use
+=======
+            const startBtn = document.getElementById('startBtn');
+            if (startBtn) {
+                startBtn.textContent = 'Start Camera';
+                startBtn.disabled = false;
+            }
+            const videoToggleBtn = document.getElementById('videoToggleBtn');
+            if (videoToggleBtn) {
+                const label = videoToggleBtn.querySelector('span:last-child');
+                if (label) label.textContent = 'Start Video';
+            }
+>>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
         } catch (error) {
             console.error('Error loading model:', error);
             const errorMsg = error.message || 'Could not load object detection model.';
@@ -292,10 +308,17 @@ class TalkingObjectsApp {
             }
             
             alert(`${errorMsg}\n\nTroubleshooting:\n1. Check your internet connection\n2. The model needs to download (~30MB)\n3. Try refreshing the page\n4. Check browser console for details`);
+<<<<<<< HEAD
             const videoToggleBtn = document.getElementById('videoToggleBtn');
             if (videoToggleBtn) {
                 videoToggleBtn.querySelector('span:last-child').textContent = 'Model Failed';
                 videoToggleBtn.disabled = true;
+=======
+            const startBtn = document.getElementById('startBtn');
+            if (startBtn) {
+                startBtn.textContent = 'Start Camera (Model Failed)';
+                startBtn.disabled = true;
+>>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
             }
         }
     }
@@ -319,13 +342,24 @@ class TalkingObjectsApp {
                 this.overlay.width = this.video.videoWidth;
                 this.overlay.height = this.video.videoHeight;
                 this.processVideo();
-            });
+            }, { once: true });
             
+<<<<<<< HEAD
             // Update video toggle button state
             const videoToggleBtn = document.getElementById('videoToggleBtn');
             if (videoToggleBtn) {
                 videoToggleBtn.classList.add('active');
                 videoToggleBtn.querySelector('span:last-child').textContent = 'Stop Video';
+=======
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+            const videoToggleBtn = document.getElementById('videoToggleBtn');
+            if (videoToggleBtn) {
+                const label = videoToggleBtn.querySelector('span:last-child');
+                if (label) label.textContent = 'Stop Video';
+>>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
             }
             this.isRunning = true;
         } catch (error) {
@@ -349,18 +383,33 @@ class TalkingObjectsApp {
         this.updateObjectsDisplay();
         this.clearOverlay();
         
+<<<<<<< HEAD
         // Update video toggle button state
         const videoToggleBtn = document.getElementById('videoToggleBtn');
         if (videoToggleBtn) {
             videoToggleBtn.classList.remove('active');
             videoToggleBtn.querySelector('span:last-child').textContent = 'Start Video';
+=======
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        if (startBtn) startBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = true;
+        const videoToggleBtn = document.getElementById('videoToggleBtn');
+        if (videoToggleBtn) {
+            const label = videoToggleBtn.querySelector('span:last-child');
+            if (label) label.textContent = 'Start Video';
+>>>>>>> 359180eaa40f114a3301ebfdc4ce6344bbf0ff49
         }
         this.isRunning = false;
         this.clearHover();
     }
     
     async processVideo() {
-        if (!this.isRunning || !this.model) return;
+        if (!this.isRunning) return;
+        if (!this.model) {
+            this.animationFrame = requestAnimationFrame(() => this.processVideo());
+            return;
+        }
         
         // Draw video to canvas
         this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
@@ -452,7 +501,7 @@ class TalkingObjectsApp {
                 lastSpoke: 0,
                 lastSeen: Date.now(),
                 speechBubble: null,
-                isMuted: true
+                isMuted: false
             });
         }
         
@@ -674,20 +723,6 @@ class TalkingObjectsApp {
             this.overlayCtx.textAlign = 'center';
             this.overlayCtx.textBaseline = 'middle';
             
-            // Faint blue glow around detected object bounds
-            const glowPadding = 6;
-            this.overlayCtx.save();
-            this.overlayCtx.shadowColor = 'rgba(96, 165, 250, 0.5)';
-            this.overlayCtx.shadowBlur = 18;
-            this.overlayCtx.strokeStyle = 'rgba(147, 197, 253, 0.7)';
-            this.overlayCtx.lineWidth = 3;
-            this.overlayCtx.strokeRect(
-                obj.x - glowPadding,
-                obj.y - glowPadding,
-                obj.width + glowPadding * 2,
-                obj.height + glowPadding * 2
-            );
-            this.overlayCtx.restore();
 
             // Draw circle background
             this.overlayCtx.beginPath();
@@ -870,19 +905,12 @@ class TalkingObjectsApp {
         if (!this.isRunning || !this.video.videoWidth || !this.video.videoHeight) return;
 
         const rect = this.video.getBoundingClientRect();
-        const localX = event.clientX - rect.left;
-        const localY = event.clientY - rect.top;
-        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
             this.clearHover();
             return;
         }
 
-        const scaleX = this.video.videoWidth / rect.width;
-        const scaleY = this.video.videoHeight / rect.height;
-        const videoX = this.video.videoWidth - localX * scaleX;
-        const videoY = localY * scaleY;
-
-        const hoveredObj = this.getObjectAtPoint(videoX, videoY, false);
+        const hoveredObj = this.getObjectAtScreenPoint(event.clientX, event.clientY, false);
         if (!hoveredObj) {
             this.clearHover();
             return;
@@ -900,21 +928,43 @@ class TalkingObjectsApp {
         if (!this.isRunning || !this.video.videoWidth || !this.video.videoHeight) return;
 
         const rect = this.video.getBoundingClientRect();
-        const localX = event.clientX - rect.left;
-        const localY = event.clientY - rect.top;
-        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) return;
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
 
-        const scaleX = this.video.videoWidth / rect.width;
-        const scaleY = this.video.videoHeight / rect.height;
-        const videoX = this.video.videoWidth - localX * scaleX;
-        const videoY = localY * scaleY;
-
-        const clickedObj = this.getObjectAtPoint(videoX, videoY, true);
+        const clickedObj = this.getObjectAtScreenPoint(event.clientX, event.clientY, true);
         if (!clickedObj) return;
 
         this.hoveredObjectId = clickedObj.id;
         this.toggleHoveredObjectSpeech();
         this.positionHoverControl(clickedObj);
+    }
+
+    getObjectAtScreenPoint(clientX, clientY, includeMuted = false) {
+        let bestMatch = null;
+        let bestDistance = Infinity;
+
+        const videoRect = this.video.getBoundingClientRect();
+        const scaleX = videoRect.width / this.video.videoWidth;
+        const scaleY = videoRect.height / this.video.videoHeight;
+
+        for (const obj of this.objects.values()) {
+            if (!includeMuted && obj.isMuted) continue;
+
+            const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
+            const screenY = videoRect.top + obj.centerY * scaleY;
+            const faceSize = Math.min(obj.width, obj.height, 80);
+            const radius = Math.min((faceSize / 2 + 5) * scaleX, (faceSize / 2 + 5) * scaleY);
+
+            const dx = clientX - screenX;
+            const dy = clientY - screenY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance <= radius && distance < bestDistance) {
+                bestDistance = distance;
+                bestMatch = obj;
+            }
+        }
+
+        return bestMatch;
     }
 
     getObjectAtPoint(videoX, videoY, includeMuted = false) {
@@ -986,6 +1036,9 @@ class TalkingObjectsApp {
         }
 
         this.updateHoverControl(obj);
+        if (obj.isMuted) {
+            this.clearHover();
+        }
         this.updateObjectsDisplay();
     }
 
