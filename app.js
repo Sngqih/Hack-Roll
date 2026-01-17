@@ -14,6 +14,9 @@ class TalkingObjectsApp {
         this.model = null;
         this.lastDetection = 0;
         this.detectionInterval = 1000; // Detect objects every 1 second
+        this.allowedClasses = new Set();
+        this.allowOtherObjects = true;
+        this.knownClasses = [];
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -180,12 +183,15 @@ class TalkingObjectsApp {
             }
         };
         
+        this.knownClasses = Object.keys(this.personalities).filter(key => key !== 'default');
+        
         this.init();
     }
     
     async init() {
         document.getElementById('startBtn').addEventListener('click', () => this.startCamera());
         document.getElementById('stopBtn').addEventListener('click', () => this.stopCamera());
+        this.setupObjectFilters();
         document.getElementById('threshold').addEventListener('input', (e) => {
             document.getElementById('threshValue').textContent = e.target.value + '%';
             this.threshold = parseFloat(e.target.value) / 100;
@@ -330,6 +336,7 @@ class TalkingObjectsApp {
             for (let i = 0; i < predictions.length; i++) {
                 const pred = predictions[i];
                 if (pred.score < this.threshold) continue;
+                if (!this.isClassAllowed(pred.class)) continue;
                 
                 const predCenterX = pred.bbox[0] + pred.bbox[2] / 2;
                 const predCenterY = pred.bbox[1] + pred.bbox[3] / 2;
@@ -363,6 +370,7 @@ class TalkingObjectsApp {
         // Add new objects
         for (let i = 0; i < predictions.length; i++) {
             if (predictions[i].score < this.threshold) continue;
+            if (!this.isClassAllowed(predictions[i].class)) continue;
             if (existingIds.has(i)) continue;
             
             const pred = predictions[i];
@@ -637,6 +645,110 @@ class TalkingObjectsApp {
             `;
             display.appendChild(card);
         }
+    }
+    
+    setupObjectFilters() {
+        const filtersContainer = document.getElementById('objectFilters');
+        const selectAllBtn = document.getElementById('selectAllObjects');
+        const clearAllBtn = document.getElementById('clearAllObjects');
+        
+        const available = this.knownClasses;
+        const entries = [
+            ...available.map(key => ({
+                key,
+                label: this.formatClassLabel(key),
+                emoji: this.personalities[key]?.emoji || '🤖'
+            })),
+            { key: 'other', label: 'Other objects', emoji: '🤖' }
+        ];
+        
+        filtersContainer.innerHTML = '';
+        
+        entries.forEach(entry => {
+            const label = document.createElement('label');
+            label.className = 'filter-option';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = entry.key;
+            checkbox.checked = true; // default to old behavior (all on)
+            
+            checkbox.addEventListener('change', () => {
+                if (entry.key === 'other') {
+                    this.allowOtherObjects = checkbox.checked;
+                    this.removeDisallowedObjects();
+                    return;
+                }
+                this.toggleAllowedClass(entry.key, checkbox.checked);
+            });
+            
+            if (entry.key !== 'other') {
+                this.allowedClasses.add(entry.key);
+            }
+            
+            label.appendChild(checkbox);
+            const text = document.createElement('span');
+            text.textContent = `${entry.emoji} ${entry.label}`;
+            label.appendChild(text);
+            filtersContainer.appendChild(label);
+        });
+        
+        selectAllBtn.addEventListener('click', () => {
+            filtersContainer.querySelectorAll('input[type="checkbox"]').forEach(input => {
+                input.checked = true;
+                if (input.value === 'other') {
+                    this.allowOtherObjects = true;
+                } else {
+                    this.allowedClasses.add(input.value);
+                }
+            });
+        });
+        
+        clearAllBtn.addEventListener('click', () => {
+            filtersContainer.querySelectorAll('input[type="checkbox"]').forEach(input => {
+                input.checked = false;
+            });
+            this.allowedClasses.clear();
+            this.allowOtherObjects = false;
+            this.removeDisallowedObjects();
+        });
+    }
+    
+    toggleAllowedClass(className, enabled) {
+        if (enabled) {
+            this.allowedClasses.add(className);
+            return;
+        }
+        
+        this.allowedClasses.delete(className);
+        this.removeDisallowedObjects();
+    }
+    
+    isClassAllowed(className) {
+        const normalized = className.toLowerCase().replace(/\s+/g, '_');
+        if (this.allowedClasses.has(normalized)) return true;
+        
+        const isKnown = this.knownClasses.includes(normalized);
+        if (isKnown) return false;
+        
+        return this.allowOtherObjects;
+    }
+    
+    removeDisallowedObjects() {
+        for (const [id, obj] of this.objects) {
+            if (!this.isClassAllowed(obj.class)) {
+                if (obj.speechBubble) {
+                    obj.speechBubble.remove();
+                }
+                this.objects.delete(id);
+            }
+        }
+        this.updateObjectsDisplay();
+        this.clearOverlay();
+    }
+    
+    formatClassLabel(className) {
+        return className.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
     }
 }
 
