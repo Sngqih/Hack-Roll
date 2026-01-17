@@ -23,6 +23,18 @@
 
         <!-- Main video area -->
         <div class="zoom-main">
+            <!-- Chat log sidebar (left side) -->
+            <div class="chat-sidebar">
+                <div class="sidebar-header">
+                    <h3>💬 Chat</h3>
+                </div>
+                <div id="chatLog" class="chat-log"></div>
+                <div class="chat-input-container">
+                    <input type="text" id="chatInput" class="chat-input" placeholder="Type a message to the objects..." maxlength="200">
+                    <button id="chatSendBtn" class="chat-send-btn" title="Send message">➤</button>
+                </div>
+            </div>
+
             <div class="video-container">
                 <video id="video" autoplay playsinline></video>
                 <canvas id="canvas"></canvas>

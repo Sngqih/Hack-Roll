@@ -26,6 +26,7 @@ class TalkingObjectsApp {
         this.objectsChanged = false; // Track if objects changed to optimize redraws
         this.lastOverlayUpdate = 0;
         this.overlayUpdateInterval = 33; // Update overlay every ~33ms (~30fps) to follow objects smoothly
+        this.chatHistory = []; // Store chat history
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -239,6 +240,7 @@ class TalkingObjectsApp {
         this.threshold = 0.5;
         this.setupHoverControls();
         this.setupEmojiButtonClicks();
+        this.setupChat();
         
         // Load model without blocking UI/camera startup
         this.waitForTensorFlow()
@@ -641,7 +643,7 @@ class TalkingObjectsApp {
         }
     }
     
-    makeObjectTalk(objectId, dialogueType, otherObj = null) {
+    makeObjectTalk(objectId, dialogueType, otherObj = null, customDialogue = null) {
         const obj = this.objects.get(objectId);
         if (!obj) return;
         if (obj.isMuted) return;
@@ -664,9 +666,12 @@ class TalkingObjectsApp {
             }
         }
         
-        // If this is a response, try to generate a response based on what the other object said
+        // If custom dialogue provided, use it (e.g., from user message)
         let dialogue;
-        if (otherObj && dialogueType === 'responses' && otherObj.dialogue) {
+        if (customDialogue) {
+            dialogue = customDialogue;
+        } else if (otherObj && dialogueType === 'responses' && otherObj.dialogue) {
+            // If this is a response, try to generate a response based on what the other object said
             dialogue = this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
             if (!dialogue) {
                 // Fallback to regular responses if no contextual response found
@@ -712,6 +717,11 @@ class TalkingObjectsApp {
             obj.dialogue = dialogue;
             obj.lastSpoke = Date.now();
             obj.lastDialogue = dialogue; // Store for future reference
+            
+            // Add to chat log (only for participants)
+            if (obj.inParticipantList) {
+                this.addChatMessage(obj.name, dialogue, 'object');
+            }
             
             // Remove thinking animation
             if (obj.thinkingBubble) {
@@ -1802,6 +1812,259 @@ class TalkingObjectsApp {
         
         // Return a random name from the list
         return names[Math.floor(Math.random() * names.length)];
+    }
+    
+    setupChat() {
+        const chatInput = document.getElementById('chatInput');
+        const chatSendBtn = document.getElementById('chatSendBtn');
+        
+        if (!chatInput || !chatSendBtn) return;
+        
+        const sendMessage = () => {
+            const message = chatInput.value.trim();
+            if (!message) return;
+            
+            // Add user message to chat
+            this.addChatMessage('You', message, 'user');
+            
+            // Process message and get responses from objects
+            this.processUserMessage(message);
+            
+            // Clear input
+            chatInput.value = '';
+        };
+        
+        // Send on button click
+        chatSendBtn.addEventListener('click', sendMessage);
+        
+        // Send on Enter key
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    }
+    
+    addChatMessage(sender, message, type = 'object') {
+        const chatLog = document.getElementById('chatLog');
+        if (!chatLog) return;
+        
+        const messageEl = document.createElement('div');
+        messageEl.className = `chat-message ${type}`;
+        
+        if (type === 'object') {
+            // Find the object by name if it's an object message
+            const obj = Array.from(this.objects.values()).find(o => o.name === sender);
+            const emoji = obj ? obj.emoji : '🤖';
+            messageEl.innerHTML = `
+                <div class="chat-message-header">
+                    <span>${emoji} ${sender}</span>
+                </div>
+                <div class="chat-message-content">"${message}"</div>
+            `;
+        } else {
+            messageEl.innerHTML = `
+                <div class="chat-message-header">
+                    <span>${sender}</span>
+                </div>
+                <div class="chat-message-content">${message}</div>
+            `;
+        }
+        
+        chatLog.appendChild(messageEl);
+        
+        // Auto-scroll to bottom
+        chatLog.scrollTop = chatLog.scrollHeight;
+        
+        // Store in history
+        this.chatHistory.push({ sender, message, type, timestamp: Date.now() });
+    }
+    
+    processUserMessage(userMessage) {
+        const messageLower = userMessage.toLowerCase();
+        const participantObjects = Array.from(this.objects.values()).filter(obj => obj.inParticipantList);
+        
+        if (participantObjects.length === 0) {
+            this.addChatMessage('System', 'No participants available to respond.', 'user');
+            return;
+        }
+        
+        // Analyze message to determine which object should respond
+        // For now, randomly select one or multiple participants to respond
+        const numResponders = Math.min(participantObjects.length, Math.random() < 0.7 ? 1 : 2);
+        const responders = [];
+        
+        for (let i = 0; i < numResponders; i++) {
+            const available = participantObjects.filter(obj => !responders.includes(obj));
+            if (available.length > 0) {
+                responders.push(available[Math.floor(Math.random() * available.length)]);
+            }
+        }
+        
+        // Generate responses with a delay to make it feel natural
+        responders.forEach((obj, index) => {
+            setTimeout(() => {
+                const response = this.generateResponseToUserMessage(obj, userMessage);
+                if (response) {
+                    // makeObjectTalk will add the message to chat log automatically
+                    this.makeObjectTalk(obj.id, 'responses', null, response);
+                }
+            }, 500 + index * 800); // Stagger responses
+        });
+    }
+    
+    generateResponseToUserMessage(obj, userMessage) {
+        const messageLower = userMessage.toLowerCase();
+        const objType = obj.className;
+        const personality = obj.personality;
+        
+        // Extract keywords from user message
+        const keywords = {
+            tech: ['computer', 'laptop', 'phone', 'device', 'wireless', 'network', 'connect', 'signal', 'battery', 'power', 'update', 'process', 'data', 'digital', 'tech', 'technology'],
+            comfort: ['comfort', 'comfy', 'sit', 'seat', 'relax', 'cushion', 'support', 'lounge', 'rest', 'tired'],
+            food: ['drink', 'coffee', 'tea', 'water', 'liquid', 'fill', 'empty', 'cup', 'bottle', 'thirsty', 'cheers', 'hungry', 'eat'],
+            knowledge: ['book', 'read', 'story', 'page', 'chapter', 'knowledge', 'wisdom', 'words', 'learn', 'teach', 'tell me'],
+            sports: ['play', 'game', 'ball', 'sport', 'catch', 'throw', 'bounce', 'fun', 'outdoor', 'exercise'],
+            question: ['?', 'wonder', 'what', 'why', 'how', 'when', 'where', 'who', 'can you', 'do you'],
+            greeting: ['hello', 'hi', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening'],
+            compliment: ['nice', 'good', 'great', 'awesome', 'amazing', 'cool', 'love', 'like', 'favorite'],
+            help: ['help', 'assist', 'need', 'want', 'please', 'can you help']
+        };
+        
+        // Detect themes
+        const detectedThemes = [];
+        for (const [theme, words] of Object.entries(keywords)) {
+            if (words.some(word => messageLower.includes(word))) {
+                detectedThemes.push(theme);
+            }
+        }
+        
+        // Generate contextual responses based on object type and message content
+        const responses = [];
+        
+        // Greeting responses
+        if (detectedThemes.includes('greeting')) {
+            if (personality.greetings) {
+                responses.push(...personality.greetings);
+            }
+        }
+        
+        // Question responses
+        if (detectedThemes.includes('question')) {
+            if (objType === 'laptop' || objType === 'phone') {
+                responses.push(
+                    "I'm processing that question...",
+                    "Let me think about that...",
+                    "That's an interesting question!",
+                    "I can help with that!",
+                    "Hmm, let me compute an answer..."
+                );
+            } else if (objType === 'book') {
+                responses.push(
+                    "I might have the answer in my pages!",
+                    "That's a great question to ponder!",
+                    "I've read about that somewhere...",
+                    "Knowledge is the key!",
+                    "Let me check my chapters..."
+                );
+            } else {
+                responses.push(
+                    "That's a good question!",
+                    "I'm thinking about that...",
+                    "Hmm, interesting!",
+                    "Let me consider that...",
+                    "I wonder about that too!"
+                );
+            }
+        }
+        
+        // Tech-related responses
+        if (detectedThemes.includes('tech')) {
+            if (objType === 'laptop' || objType === 'phone') {
+                responses.push(
+                    "Technology is my specialty!",
+                    "I know all about that!",
+                    "Tech talk? I'm in!",
+                    "That's right up my alley!",
+                    "I'm built for this!"
+                );
+            } else {
+                responses.push(
+                    "I'm not as tech-savvy as some objects!",
+                    "That sounds complicated!",
+                    "I'm more of an analog type!",
+                    "Technology is fascinating!",
+                    "I wish I understood tech better!"
+                );
+            }
+        }
+        
+        // Compliment responses
+        if (detectedThemes.includes('compliment')) {
+            responses.push(
+                "Aww, thank you!",
+                "That's so kind of you!",
+                "You're making me blush!",
+                "I appreciate that!",
+                "That means a lot!",
+                "You're too nice!",
+                "Thanks! I try my best!"
+            );
+        }
+        
+        // Help requests
+        if (detectedThemes.includes('help')) {
+            if (objType === 'laptop' || objType === 'phone') {
+                responses.push(
+                    "I'm here to help!",
+                    "What can I assist you with?",
+                    "I'll do my best to help!",
+                    "I'm ready to assist!",
+                    "How can I be of service?"
+                );
+            } else {
+                responses.push(
+                    "I'll try to help!",
+                    "What do you need?",
+                    "I'm here for you!",
+                    "How can I assist?",
+                    "I'll do what I can!"
+                );
+            }
+        }
+        
+        // Generic responses based on personality
+        if (responses.length === 0) {
+            // Use personality responses
+            if (personality.responses) {
+                responses.push(...personality.responses);
+            }
+            if (personality.conversations) {
+                responses.push(...personality.conversations);
+            }
+            if (personality.random) {
+                responses.push(...personality.random);
+            }
+        }
+        
+        // Add some personalized responses
+        const personalizedResponses = [
+            `I heard you say "${userMessage.substring(0, 30)}${userMessage.length > 30 ? '...' : ''}" - that's interesting!`,
+            `You mentioned something about that - I'm listening!`,
+            `I understand what you're saying!`,
+            `That's a good point!`,
+            `I see what you mean!`
+        ];
+        
+        responses.push(...personalizedResponses);
+        
+        // Return a random response
+        if (responses.length > 0) {
+            return responses[Math.floor(Math.random() * responses.length)];
+        }
+        
+        return "I'm not sure how to respond to that, but I'm here!";
     }
     
     calculateOverlap(bbox1, bbox2) {
