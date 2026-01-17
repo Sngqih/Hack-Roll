@@ -9,7 +9,6 @@ class TalkingObjectsApp {
         this.overlayCtx = this.overlay.getContext('2d');
         this.stream = null;
         this.objects = new Map();
-        this.pokedex = new Map(); // Track unique items by class
         this.animationFrame = null;
         this.isRunning = false;
         this.model = null;
@@ -18,7 +17,10 @@ class TalkingObjectsApp {
         this.allowedClasses = new Set();
         this.allowOtherObjects = true;
         this.knownClasses = [];
-        this.loadPokedexFromStorage();
+        this.hoveredObjectId = null;
+        this.hoverControl = null;
+        this.hoverControlLabel = null;
+        this.hoverControlToggle = null;
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -191,53 +193,15 @@ class TalkingObjectsApp {
     }
     
     async init() {
-        // Video toggle button (merged Start/Stop functionality)
-        const videoToggleBtn = document.getElementById('videoToggleBtn');
-        videoToggleBtn.addEventListener('click', () => {
-            if (this.isRunning) {
-                this.stopCamera();
-            } else {
-                this.startCamera();
-            }
-        });
-        
-        // Settings panel
-        document.getElementById('settingsBtn').addEventListener('click', () => {
-            document.getElementById('settingsPanel').classList.toggle('active');
-        });
-        document.getElementById('closeSettingsBtn').addEventListener('click', () => {
-            document.getElementById('settingsPanel').classList.remove('active');
-        });
-        
-        // PokéDex panel
-        document.getElementById('pokedexBtn').addEventListener('click', () => {
-            document.getElementById('pokedexPanel').classList.toggle('active');
-            if (document.getElementById('pokedexPanel').classList.contains('active')) {
-                this.updatePokedexDisplay();
-            }
-        });
-        document.getElementById('closePokedexBtn').addEventListener('click', () => {
-            document.getElementById('pokedexPanel').classList.remove('active');
-        });
-        document.getElementById('downloadPokedexBtn').addEventListener('click', () => this.downloadPokedex());
-        document.getElementById('uploadPokedexBtn').addEventListener('click', () => {
-            document.getElementById('pokedexFile').click();
-        });
-        document.getElementById('pokedexFile').addEventListener('change', (e) => this.uploadPokedex(e));
-        
-        // Settings controls
+        document.getElementById('startBtn').addEventListener('click', () => this.startCamera());
+        document.getElementById('stopBtn').addEventListener('click', () => this.stopCamera());
         this.setupObjectFilters();
         document.getElementById('threshold').addEventListener('input', (e) => {
             document.getElementById('threshValue').textContent = e.target.value + '%';
             this.threshold = parseFloat(e.target.value) / 100;
         });
         this.threshold = 0.5;
-        
-        // End call button
-        document.getElementById('endCallBtn').addEventListener('click', () => {
-            this.stopCamera();
-            document.getElementById('settingsPanel').classList.remove('active');
-        });
+        this.setupHoverControls();
         
         // Wait for TensorFlow.js to be available, then load model
         await this.waitForTensorFlow();
@@ -278,9 +242,10 @@ class TalkingObjectsApp {
             this.model = await cocoSsd.load();
             console.log('Model loaded successfully!');
             
-            if (statusEl) statusEl.textContent = '✓ Model ready';
+            if (statusEl) statusEl.textContent = '✓ Model ready! Click "Start Camera" to begin.';
             if (statusEl) statusEl.style.color = '#4ade80';
-            // Video button is ready to use
+            document.getElementById('startBtn').textContent = 'Start Camera';
+            document.getElementById('startBtn').disabled = false;
         } catch (error) {
             console.error('Error loading model:', error);
             const errorMsg = error.message || 'Could not load object detection model.';
@@ -291,9 +256,8 @@ class TalkingObjectsApp {
             }
             
             alert(`${errorMsg}\n\nTroubleshooting:\n1. Check your internet connection\n2. The model needs to download (~30MB)\n3. Try refreshing the page\n4. Check browser console for details`);
-            const videoToggleBtn = document.getElementById('videoToggleBtn');
-            videoToggleBtn.querySelector('span:last-child').textContent = 'Model Failed';
-            videoToggleBtn.disabled = true;
+            document.getElementById('startBtn').textContent = 'Start Camera (Model Failed)';
+            document.getElementById('startBtn').disabled = true;
         }
     }
     
@@ -318,10 +282,8 @@ class TalkingObjectsApp {
                 this.processVideo();
             });
             
-            // Update video toggle button state
-            const videoToggleBtn = document.getElementById('videoToggleBtn');
-            videoToggleBtn.classList.add('active');
-            videoToggleBtn.querySelector('span:last-child').textContent = 'Stop Video';
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
             this.isRunning = true;
         } catch (error) {
             console.error('Error accessing camera:', error);
@@ -344,11 +306,10 @@ class TalkingObjectsApp {
         this.updateObjectsDisplay();
         this.clearOverlay();
         
-        // Update video toggle button state
-        const videoToggleBtn = document.getElementById('videoToggleBtn');
-        videoToggleBtn.classList.remove('active');
-        videoToggleBtn.querySelector('span:last-child').textContent = 'Start Video';
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
         this.isRunning = false;
+        this.clearHover();
     }
     
     async processVideo() {
@@ -398,6 +359,8 @@ class TalkingObjectsApp {
             
             if (bestMatch !== null) {
                 const pred = predictions[bestMatch];
+                obj.x = pred.bbox[0];
+                obj.y = pred.bbox[1];
                 obj.centerX = pred.bbox[0] + pred.bbox[2] / 2;
                 obj.centerY = pred.bbox[1] + pred.bbox[3] / 2;
                 obj.width = pred.bbox[2];
@@ -425,13 +388,12 @@ class TalkingObjectsApp {
             const emoji = personality.emoji;
             const name = this.generateObjectName(className);
             
-            // Record in PokéDex
-            this.recordItemInPokedex(className);
-            
             this.objects.set(id, {
                 id,
                 class: pred.class,
                 className,
+                x: pred.bbox[0],
+                y: pred.bbox[1],
                 centerX: pred.bbox[0] + pred.bbox[2] / 2,
                 centerY: pred.bbox[1] + pred.bbox[3] / 2,
                 width: pred.bbox[2],
@@ -442,13 +404,9 @@ class TalkingObjectsApp {
                 dialogue: null,
                 lastSpoke: 0,
                 lastSeen: Date.now(),
-                speechBubble: null
+                speechBubble: null,
+                isMuted: true
             });
-            
-            // New object introduces itself - slightly faster
-            setTimeout(() => {
-                this.makeObjectTalk(id, 'greetings');
-            }, 300);
         }
         
         this.updateObjectsDisplay();
@@ -480,24 +438,24 @@ class TalkingObjectsApp {
         if (objectArray.length < 2) return;
         
         // Randomly trigger conversations - increased frequency
-        if (Math.random() < 0.06) { // 6% chance per detection (was 2%)
+        if (Math.random() < 0.14) { // 14% chance per detection
             const obj1 = objectArray[Math.floor(Math.random() * objectArray.length)];
             const obj2 = objectArray[Math.floor(Math.random() * objectArray.length)];
             
-            if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 2000) { // Reduced cooldown from 3000 to 2000ms
+            if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 1200) { // Faster cooldown
                 this.makeObjectTalk(obj1.id, 'conversations');
                 setTimeout(() => {
                     if (this.objects.has(obj2.id)) {
                         this.makeObjectTalk(obj2.id, 'responses');
                     }
-                }, 1200); // Slightly faster response time
+                }, 700); // Faster response time
             }
         }
         
         // Random solo dialogue - increased frequency
-        if (Math.random() < 0.04 && objectArray.length > 0) { // 4% chance per detection (was 1%)
+        if (Math.random() < 0.1 && objectArray.length > 0) { // 10% chance per detection
             const obj = objectArray[Math.floor(Math.random() * objectArray.length)];
-            if (Date.now() - obj.lastSpoke > 2000) { // Reduced cooldown from 3000 to 2000ms
+            if (Date.now() - obj.lastSpoke > 1200) { // Faster cooldown
                 this.makeObjectTalk(obj.id, 'random');
             }
         }
@@ -506,6 +464,7 @@ class TalkingObjectsApp {
     makeObjectTalk(objectId, dialogueType) {
         const obj = this.objects.get(objectId);
         if (!obj) return;
+        if (obj.isMuted) return;
         
         const dialogues = obj.personality[dialogueType] || obj.personality.random;
         const dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
@@ -650,8 +609,15 @@ class TalkingObjectsApp {
     
     drawOverlays() {
         this.clearOverlay();
+        if (this.hoveredObjectId && !this.objects.has(this.hoveredObjectId)) {
+            this.clearHover();
+        }
         
         for (const obj of this.objects.values()) {
+            if (obj.isMuted) {
+                continue;
+            }
+            const isHovered = obj.id === this.hoveredObjectId;
             // Draw face emoji
             const faceSize = Math.min(obj.width, obj.height, 80);
             const x = obj.centerX - faceSize / 2;
@@ -661,13 +627,36 @@ class TalkingObjectsApp {
             this.overlayCtx.textAlign = 'center';
             this.overlayCtx.textBaseline = 'middle';
             
+            // Faint blue glow around detected object bounds
+            const glowPadding = 6;
+            this.overlayCtx.save();
+            this.overlayCtx.shadowColor = 'rgba(96, 165, 250, 0.5)';
+            this.overlayCtx.shadowBlur = 18;
+            this.overlayCtx.strokeStyle = 'rgba(147, 197, 253, 0.7)';
+            this.overlayCtx.lineWidth = 3;
+            this.overlayCtx.strokeRect(
+                obj.x - glowPadding,
+                obj.y - glowPadding,
+                obj.width + glowPadding * 2,
+                obj.height + glowPadding * 2
+            );
+            this.overlayCtx.restore();
+
             // Draw circle background
             this.overlayCtx.beginPath();
             this.overlayCtx.arc(obj.centerX, obj.centerY, faceSize / 2 + 5, 0, Math.PI * 2);
             this.overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
             this.overlayCtx.fill();
-            this.overlayCtx.strokeStyle = '#fff';
-            this.overlayCtx.lineWidth = 3;
+            if (isHovered) {
+                this.overlayCtx.strokeStyle = '#facc15';
+                this.overlayCtx.lineWidth = 4;
+            } else if (obj.isMuted) {
+                this.overlayCtx.strokeStyle = '#ef4444';
+                this.overlayCtx.lineWidth = 3;
+            } else {
+                this.overlayCtx.strokeStyle = '#fff';
+                this.overlayCtx.lineWidth = 3;
+            }
             this.overlayCtx.stroke();
             
             // Draw emoji
@@ -681,18 +670,15 @@ class TalkingObjectsApp {
     
     updateObjectsDisplay() {
         const display = document.getElementById('objectsDisplay');
-        const countBadge = document.getElementById('participantCount');
         display.innerHTML = '';
         
-        const objectArray = Array.from(this.objects.values());
-        countBadge.textContent = objectArray.length;
-        
-        for (const obj of objectArray) {
+        for (const obj of this.objects.values()) {
             const card = document.createElement('div');
-            card.className = 'participant-card';
+            card.className = 'plant-card';
             card.innerHTML = `
                 <h4>${obj.emoji} ${obj.name}</h4>
-                <p class="class-name">${obj.class}</p>
+                <p><small>${obj.class}</small></p>
+                <p><small>${obj.isMuted ? 'Muted' : 'Speaking'}</small></p>
                 <div class="dialogue">${obj.dialogue || '...'}</div>
             `;
             display.appendChild(card);
@@ -717,18 +703,13 @@ class TalkingObjectsApp {
         filtersContainer.innerHTML = '';
         
         entries.forEach(entry => {
-            const filterItem = document.createElement('div');
-            filterItem.className = 'filter-item';
+            const label = document.createElement('label');
+            label.className = 'filter-option';
             
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.value = entry.key;
             checkbox.checked = true; // default to old behavior (all on)
-            checkbox.id = `filter-${entry.key}`;
-            
-            const label = document.createElement('label');
-            label.htmlFor = `filter-${entry.key}`;
-            label.textContent = `${entry.emoji} ${entry.label}`;
             
             checkbox.addEventListener('change', () => {
                 if (entry.key === 'other') {
@@ -743,9 +724,11 @@ class TalkingObjectsApp {
                 this.allowedClasses.add(entry.key);
             }
             
-            filterItem.appendChild(checkbox);
-            filterItem.appendChild(label);
-            filtersContainer.appendChild(filterItem);
+            label.appendChild(checkbox);
+            const text = document.createElement('span');
+            text.textContent = `${entry.emoji} ${entry.label}`;
+            label.appendChild(text);
+            filtersContainer.appendChild(label);
         });
         
         selectAllBtn.addEventListener('click', () => {
@@ -800,164 +783,170 @@ class TalkingObjectsApp {
         }
         this.updateObjectsDisplay();
         this.clearOverlay();
+        if (this.hoveredObjectId && !this.objects.has(this.hoveredObjectId)) {
+            this.clearHover();
+        }
     }
     
     formatClassLabel(className) {
         return className.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
     }
 
-    // PokéDex Methods
-    recordItemInPokedex(className) {
-        if (!this.pokedex.has(className)) {
-            this.pokedex.set(className, {
-                className,
-                firstSeen: new Date().toISOString(),
-                count: 1,
-                lastSeen: new Date().toISOString()
-            });
-        } else {
-            const item = this.pokedex.get(className);
-            item.count += 1;
-            item.lastSeen = new Date().toISOString();
-        }
-        this.savePokedexToStorage();
-        this.updatePokedexDisplay();
-    }
+    setupHoverControls() {
+        const cameraSection = document.querySelector('.camera-section');
+        if (!cameraSection || !this.overlay) return;
 
-    updatePokedexDisplay() {
-        const pokedexList = document.getElementById('pokedexList');
-        const captureCount = document.getElementById('captureCount');
-        
-        pokedexList.innerHTML = '';
-        let totalCount = 0;
-        
-        // Sort by first seen (oldest first)
-        const sorted = Array.from(this.pokedex.values())
-            .sort((a, b) => new Date(a.firstSeen) - new Date(b.firstSeen));
-        
-        sorted.forEach((item, index) => {
-            totalCount += item.count;
-            const itemEl = document.createElement('div');
-            itemEl.className = 'pokedex-item';
-            itemEl.innerHTML = `
-                <div class="pokedex-item-number">#${index + 1}</div>
-                <div class="pokedex-item-info">
-                    <div class="pokedex-item-name">${this.formatClassLabel(item.className)}</div>
-                    <div class="pokedex-item-stats">
-                        <span>Seen: ${item.count}x</span>
-                        <span>First: ${new Date(item.firstSeen).toLocaleDateString()}</span>
-                    </div>
-                </div>
-            `;
-            pokedexList.appendChild(itemEl);
+        const control = document.createElement('div');
+        control.className = 'object-control';
+        control.innerHTML = `
+            <span class="object-control__label"></span>
+            <button type="button" class="object-control__toggle">Speak: On</button>
+        `;
+        cameraSection.appendChild(control);
+
+        this.hoverControl = control;
+        this.hoverControlLabel = control.querySelector('.object-control__label');
+        this.hoverControlToggle = control.querySelector('.object-control__toggle');
+
+        this.overlay.style.pointerEvents = 'auto';
+        this.overlay.addEventListener('pointermove', (event) => this.handlePointerMove(event));
+        this.overlay.addEventListener('pointerdown', (event) => this.handlePointerClick(event));
+        this.overlay.addEventListener('pointerleave', () => this.clearHover());
+
+        this.hoverControlToggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this.toggleHoveredObjectSpeech();
         });
-        
-        captureCount.textContent = totalCount;
     }
 
-    savePokedexToStorage() {
-        const pokedexData = Array.from(this.pokedex.values());
-        localStorage.setItem('pokedex_data', JSON.stringify(pokedexData));
-    }
+    handlePointerMove(event) {
+        if (!this.isRunning || !this.video.videoWidth || !this.video.videoHeight) return;
 
-    loadPokedexFromStorage() {
-        try {
-            const stored = localStorage.getItem('pokedex_data');
-            if (stored) {
-                const data = JSON.parse(stored);
-                data.forEach(item => {
-                    this.pokedex.set(item.className, item);
-                });
-            }
-        } catch (e) {
-            console.warn('Could not load PokéDex from storage:', e);
-        }
-    }
-
-    async downloadPokedex() {
-        if (this.pokedex.size === 0) {
-            alert('No items in PokéDex yet!');
+        const rect = this.video.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
+        const localY = event.clientY - rect.top;
+        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+            this.clearHover();
             return;
         }
 
-        try {
-            const zip = new JSZip();
-            
-            // Add metadata file
-            const metadata = {
-                version: 1,
-                exported: new Date().toISOString(),
-                itemCount: this.pokedex.size,
-                items: Array.from(this.pokedex.keys())
-            };
-            zip.file('_metadata.json', JSON.stringify(metadata, null, 2));
-            
-            // Add a file for each unique item
-            this.pokedex.forEach((item) => {
-                const itemData = JSON.stringify(item, null, 2);
-                const filename = `${item.className}.json`;
-                zip.file(filename, itemData);
-            });
-            
-            // Generate zip and download
-            const blob = await zip.generateAsync({ type: 'blob' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `pokedex_${new Date().toISOString().split('T')[0]}.zip`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            
-            console.log('PokéDex downloaded successfully');
-        } catch (error) {
-            console.error('Error downloading PokéDex:', error);
-            alert('Failed to download PokéDex');
+        const scaleX = this.video.videoWidth / rect.width;
+        const scaleY = this.video.videoHeight / rect.height;
+        const videoX = this.video.videoWidth - localX * scaleX;
+        const videoY = localY * scaleY;
+
+        const hoveredObj = this.getObjectAtPoint(videoX, videoY, false);
+        if (!hoveredObj) {
+            this.clearHover();
+            return;
         }
+
+        if (this.hoveredObjectId !== hoveredObj.id) {
+            this.hoveredObjectId = hoveredObj.id;
+            this.updateHoverControl(hoveredObj);
+        }
+
+        this.positionHoverControl(hoveredObj);
     }
 
-    async uploadPokedex(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    handlePointerClick(event) {
+        if (!this.isRunning || !this.video.videoWidth || !this.video.videoHeight) return;
 
-        try {
-            const zip = new JSZip();
-            const loaded = await zip.loadAsync(file);
-            
-            let itemsLoaded = 0;
-            
-            for (const filename in loaded.files) {
-                if (filename === '_metadata.json' || filename.endsWith('/')) continue;
-                
-                const content = await loaded.files[filename].async('string');
-                const item = JSON.parse(content);
-                
-                // Merge with existing data
-                if (this.pokedex.has(item.className)) {
-                    const existing = this.pokedex.get(item.className);
-                    existing.count += item.count;
-                    if (new Date(item.firstSeen) < new Date(existing.firstSeen)) {
-                        existing.firstSeen = item.firstSeen;
-                    }
-                    existing.lastSeen = new Date().toISOString();
-                } else {
-                    this.pokedex.set(item.className, item);
-                }
-                itemsLoaded++;
+        const rect = this.video.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
+        const localY = event.clientY - rect.top;
+        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) return;
+
+        const scaleX = this.video.videoWidth / rect.width;
+        const scaleY = this.video.videoHeight / rect.height;
+        const videoX = this.video.videoWidth - localX * scaleX;
+        const videoY = localY * scaleY;
+
+        const clickedObj = this.getObjectAtPoint(videoX, videoY, true);
+        if (!clickedObj) return;
+
+        this.hoveredObjectId = clickedObj.id;
+        this.toggleHoveredObjectSpeech();
+        this.positionHoverControl(clickedObj);
+    }
+
+    getObjectAtPoint(videoX, videoY, includeMuted = false) {
+        let bestMatch = null;
+        let bestArea = Infinity;
+
+        for (const obj of this.objects.values()) {
+            if (!includeMuted && obj.isMuted) continue;
+            if (videoX < obj.x || videoX > obj.x + obj.width) continue;
+            if (videoY < obj.y || videoY > obj.y + obj.height) continue;
+            const area = obj.width * obj.height;
+            if (area < bestArea) {
+                bestArea = area;
+                bestMatch = obj;
             }
-            
-            this.savePokedexToStorage();
-            this.updatePokedexDisplay();
-            alert(`Loaded ${itemsLoaded} unique items from PokéDex!`);
-            console.log('PokéDex uploaded successfully');
-        } catch (error) {
-            console.error('Error uploading PokéDex:', error);
-            alert('Failed to upload PokéDex. Make sure it\'s a valid .zip file.');
         }
-        
-        // Reset file input
-        event.target.value = '';
+
+        return bestMatch;
+    }
+
+    updateHoverControl(obj) {
+        if (!this.hoverControl || !this.hoverControlLabel || !this.hoverControlToggle) return;
+
+        this.hoverControlLabel.textContent = `${obj.emoji} ${obj.name}`;
+        this.hoverControlToggle.textContent = obj.isMuted ? 'Speak: Off' : 'Speak: On';
+        this.hoverControl.classList.toggle('muted', obj.isMuted);
+        this.hoverControl.classList.toggle('speaking', !obj.isMuted);
+        this.hoverControl.style.display = obj.isMuted ? 'none' : 'flex';
+    }
+
+    positionHoverControl(obj) {
+        if (!this.hoverControl) return;
+
+        const cameraSection = document.querySelector('.camera-section');
+        if (!cameraSection) return;
+
+        const videoRect = this.video.getBoundingClientRect();
+        const containerRect = cameraSection.getBoundingClientRect();
+        const scaleX = videoRect.width / this.video.videoWidth;
+        const scaleY = videoRect.height / this.video.videoHeight;
+
+        const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
+        const screenY = videoRect.top + obj.y * scaleY;
+
+        const localX = screenX - containerRect.left;
+        const localY = screenY - containerRect.top;
+
+        const padding = 8;
+        const maxX = cameraSection.clientWidth - padding;
+        const maxY = cameraSection.clientHeight - padding;
+
+        const clampedX = Math.max(padding, Math.min(localX, maxX));
+        const clampedY = Math.max(padding, Math.min(localY, maxY));
+
+        this.hoverControl.style.left = `${clampedX}px`;
+        this.hoverControl.style.top = `${clampedY}px`;
+    }
+
+    toggleHoveredObjectSpeech() {
+        if (!this.hoveredObjectId) return;
+        const obj = this.objects.get(this.hoveredObjectId);
+        if (!obj) return;
+
+        obj.isMuted = !obj.isMuted;
+        if (obj.isMuted && obj.speechBubble) {
+            obj.speechBubble.remove();
+            obj.speechBubble = null;
+            obj.dialogue = null;
+        }
+
+        this.updateHoverControl(obj);
+        this.updateObjectsDisplay();
+    }
+
+    clearHover() {
+        this.hoveredObjectId = null;
+        if (this.hoverControl) {
+            this.hoverControl.style.display = 'none';
+        }
     }
 }
 
