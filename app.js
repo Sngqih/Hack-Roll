@@ -9,6 +9,7 @@ class TalkingObjectsApp {
         this.overlayCtx = this.overlay.getContext('2d');
         this.stream = null;
         this.objects = new Map();
+        this.pokedex = new Map(); // Track unique items by class
         this.animationFrame = null;
         this.isRunning = false;
         this.model = null;
@@ -17,6 +18,7 @@ class TalkingObjectsApp {
         this.allowedClasses = new Set();
         this.allowOtherObjects = true;
         this.knownClasses = [];
+        this.loadPokedexFromStorage();
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -206,6 +208,22 @@ class TalkingObjectsApp {
         document.getElementById('closeSettingsBtn').addEventListener('click', () => {
             document.getElementById('settingsPanel').classList.remove('active');
         });
+        
+        // PokéDex panel
+        document.getElementById('pokedexBtn').addEventListener('click', () => {
+            document.getElementById('pokedexPanel').classList.toggle('active');
+            if (document.getElementById('pokedexPanel').classList.contains('active')) {
+                this.updatePokedexDisplay();
+            }
+        });
+        document.getElementById('closePokedexBtn').addEventListener('click', () => {
+            document.getElementById('pokedexPanel').classList.remove('active');
+        });
+        document.getElementById('downloadPokedexBtn').addEventListener('click', () => this.downloadPokedex());
+        document.getElementById('uploadPokedexBtn').addEventListener('click', () => {
+            document.getElementById('pokedexFile').click();
+        });
+        document.getElementById('pokedexFile').addEventListener('change', (e) => this.uploadPokedex(e));
         
         // Settings controls
         this.setupObjectFilters();
@@ -406,6 +424,9 @@ class TalkingObjectsApp {
             const personality = this.personalities[className] || this.personalities.default;
             const emoji = personality.emoji;
             const name = this.generateObjectName(className);
+            
+            // Record in PokéDex
+            this.recordItemInPokedex(className);
             
             this.objects.set(id, {
                 id,
@@ -783,6 +804,160 @@ class TalkingObjectsApp {
     
     formatClassLabel(className) {
         return className.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    // PokéDex Methods
+    recordItemInPokedex(className) {
+        if (!this.pokedex.has(className)) {
+            this.pokedex.set(className, {
+                className,
+                firstSeen: new Date().toISOString(),
+                count: 1,
+                lastSeen: new Date().toISOString()
+            });
+        } else {
+            const item = this.pokedex.get(className);
+            item.count += 1;
+            item.lastSeen = new Date().toISOString();
+        }
+        this.savePokedexToStorage();
+        this.updatePokedexDisplay();
+    }
+
+    updatePokedexDisplay() {
+        const pokedexList = document.getElementById('pokedexList');
+        const captureCount = document.getElementById('captureCount');
+        
+        pokedexList.innerHTML = '';
+        let totalCount = 0;
+        
+        // Sort by first seen (oldest first)
+        const sorted = Array.from(this.pokedex.values())
+            .sort((a, b) => new Date(a.firstSeen) - new Date(b.firstSeen));
+        
+        sorted.forEach((item, index) => {
+            totalCount += item.count;
+            const itemEl = document.createElement('div');
+            itemEl.className = 'pokedex-item';
+            itemEl.innerHTML = `
+                <div class="pokedex-item-number">#${index + 1}</div>
+                <div class="pokedex-item-info">
+                    <div class="pokedex-item-name">${this.formatClassLabel(item.className)}</div>
+                    <div class="pokedex-item-stats">
+                        <span>Seen: ${item.count}x</span>
+                        <span>First: ${new Date(item.firstSeen).toLocaleDateString()}</span>
+                    </div>
+                </div>
+            `;
+            pokedexList.appendChild(itemEl);
+        });
+        
+        captureCount.textContent = totalCount;
+    }
+
+    savePokedexToStorage() {
+        const pokedexData = Array.from(this.pokedex.values());
+        localStorage.setItem('pokedex_data', JSON.stringify(pokedexData));
+    }
+
+    loadPokedexFromStorage() {
+        try {
+            const stored = localStorage.getItem('pokedex_data');
+            if (stored) {
+                const data = JSON.parse(stored);
+                data.forEach(item => {
+                    this.pokedex.set(item.className, item);
+                });
+            }
+        } catch (e) {
+            console.warn('Could not load PokéDex from storage:', e);
+        }
+    }
+
+    async downloadPokedex() {
+        if (this.pokedex.size === 0) {
+            alert('No items in PokéDex yet!');
+            return;
+        }
+
+        try {
+            const zip = new JSZip();
+            
+            // Add metadata file
+            const metadata = {
+                version: 1,
+                exported: new Date().toISOString(),
+                itemCount: this.pokedex.size,
+                items: Array.from(this.pokedex.keys())
+            };
+            zip.file('_metadata.json', JSON.stringify(metadata, null, 2));
+            
+            // Add a file for each unique item
+            this.pokedex.forEach((item) => {
+                const itemData = JSON.stringify(item, null, 2);
+                const filename = `${item.className}.json`;
+                zip.file(filename, itemData);
+            });
+            
+            // Generate zip and download
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `pokedex_${new Date().toISOString().split('T')[0]}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            console.log('PokéDex downloaded successfully');
+        } catch (error) {
+            console.error('Error downloading PokéDex:', error);
+            alert('Failed to download PokéDex');
+        }
+    }
+
+    async uploadPokedex(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const zip = new JSZip();
+            const loaded = await zip.loadAsync(file);
+            
+            let itemsLoaded = 0;
+            
+            for (const filename in loaded.files) {
+                if (filename === '_metadata.json' || filename.endsWith('/')) continue;
+                
+                const content = await loaded.files[filename].async('string');
+                const item = JSON.parse(content);
+                
+                // Merge with existing data
+                if (this.pokedex.has(item.className)) {
+                    const existing = this.pokedex.get(item.className);
+                    existing.count += item.count;
+                    if (new Date(item.firstSeen) < new Date(existing.firstSeen)) {
+                        existing.firstSeen = item.firstSeen;
+                    }
+                    existing.lastSeen = new Date().toISOString();
+                } else {
+                    this.pokedex.set(item.className, item);
+                }
+                itemsLoaded++;
+            }
+            
+            this.savePokedexToStorage();
+            this.updatePokedexDisplay();
+            alert(`Loaded ${itemsLoaded} unique items from PokéDex!`);
+            console.log('PokéDex uploaded successfully');
+        } catch (error) {
+            console.error('Error uploading PokéDex:', error);
+            alert('Failed to upload PokéDex. Make sure it\'s a valid .zip file.');
+        }
+        
+        // Reset file input
+        event.target.value = '';
     }
 }
 
