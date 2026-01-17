@@ -17,6 +17,10 @@ class TalkingObjectsApp {
         this.allowedClasses = new Set();
         this.allowOtherObjects = true;
         this.knownClasses = [];
+        this.hoveredObjectId = null;
+        this.hoverControl = null;
+        this.hoverControlLabel = null;
+        this.hoverControlToggle = null;
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -197,6 +201,7 @@ class TalkingObjectsApp {
             this.threshold = parseFloat(e.target.value) / 100;
         });
         this.threshold = 0.5;
+        this.setupHoverControls();
         
         // Wait for TensorFlow.js to be available, then load model
         await this.waitForTensorFlow();
@@ -304,6 +309,7 @@ class TalkingObjectsApp {
         document.getElementById('startBtn').disabled = false;
         document.getElementById('stopBtn').disabled = true;
         this.isRunning = false;
+        this.clearHover();
     }
     
     async processVideo() {
@@ -353,6 +359,8 @@ class TalkingObjectsApp {
             
             if (bestMatch !== null) {
                 const pred = predictions[bestMatch];
+                obj.x = pred.bbox[0];
+                obj.y = pred.bbox[1];
                 obj.centerX = pred.bbox[0] + pred.bbox[2] / 2;
                 obj.centerY = pred.bbox[1] + pred.bbox[3] / 2;
                 obj.width = pred.bbox[2];
@@ -384,6 +392,8 @@ class TalkingObjectsApp {
                 id,
                 class: pred.class,
                 className,
+                x: pred.bbox[0],
+                y: pred.bbox[1],
                 centerX: pred.bbox[0] + pred.bbox[2] / 2,
                 centerY: pred.bbox[1] + pred.bbox[3] / 2,
                 width: pred.bbox[2],
@@ -394,13 +404,9 @@ class TalkingObjectsApp {
                 dialogue: null,
                 lastSpoke: 0,
                 lastSeen: Date.now(),
-                speechBubble: null
+                speechBubble: null,
+                isMuted: true
             });
-            
-            // New object introduces itself - slightly faster
-            setTimeout(() => {
-                this.makeObjectTalk(id, 'greetings');
-            }, 300);
         }
         
         this.updateObjectsDisplay();
@@ -432,24 +438,24 @@ class TalkingObjectsApp {
         if (objectArray.length < 2) return;
         
         // Randomly trigger conversations - increased frequency
-        if (Math.random() < 0.06) { // 6% chance per detection (was 2%)
+        if (Math.random() < 0.14) { // 14% chance per detection
             const obj1 = objectArray[Math.floor(Math.random() * objectArray.length)];
             const obj2 = objectArray[Math.floor(Math.random() * objectArray.length)];
             
-            if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 2000) { // Reduced cooldown from 3000 to 2000ms
+            if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 1200) { // Faster cooldown
                 this.makeObjectTalk(obj1.id, 'conversations');
                 setTimeout(() => {
                     if (this.objects.has(obj2.id)) {
                         this.makeObjectTalk(obj2.id, 'responses');
                     }
-                }, 1200); // Slightly faster response time
+                }, 700); // Faster response time
             }
         }
         
         // Random solo dialogue - increased frequency
-        if (Math.random() < 0.04 && objectArray.length > 0) { // 4% chance per detection (was 1%)
+        if (Math.random() < 0.1 && objectArray.length > 0) { // 10% chance per detection
             const obj = objectArray[Math.floor(Math.random() * objectArray.length)];
-            if (Date.now() - obj.lastSpoke > 2000) { // Reduced cooldown from 3000 to 2000ms
+            if (Date.now() - obj.lastSpoke > 1200) { // Faster cooldown
                 this.makeObjectTalk(obj.id, 'random');
             }
         }
@@ -458,6 +464,7 @@ class TalkingObjectsApp {
     makeObjectTalk(objectId, dialogueType) {
         const obj = this.objects.get(objectId);
         if (!obj) return;
+        if (obj.isMuted) return;
         
         const dialogues = obj.personality[dialogueType] || obj.personality.random;
         const dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
@@ -602,8 +609,15 @@ class TalkingObjectsApp {
     
     drawOverlays() {
         this.clearOverlay();
+        if (this.hoveredObjectId && !this.objects.has(this.hoveredObjectId)) {
+            this.clearHover();
+        }
         
         for (const obj of this.objects.values()) {
+            if (obj.isMuted) {
+                continue;
+            }
+            const isHovered = obj.id === this.hoveredObjectId;
             // Draw face emoji
             const faceSize = Math.min(obj.width, obj.height, 80);
             const x = obj.centerX - faceSize / 2;
@@ -618,8 +632,16 @@ class TalkingObjectsApp {
             this.overlayCtx.arc(obj.centerX, obj.centerY, faceSize / 2 + 5, 0, Math.PI * 2);
             this.overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
             this.overlayCtx.fill();
-            this.overlayCtx.strokeStyle = '#fff';
-            this.overlayCtx.lineWidth = 3;
+            if (isHovered) {
+                this.overlayCtx.strokeStyle = '#facc15';
+                this.overlayCtx.lineWidth = 4;
+            } else if (obj.isMuted) {
+                this.overlayCtx.strokeStyle = '#ef4444';
+                this.overlayCtx.lineWidth = 3;
+            } else {
+                this.overlayCtx.strokeStyle = '#fff';
+                this.overlayCtx.lineWidth = 3;
+            }
             this.overlayCtx.stroke();
             
             // Draw emoji
@@ -641,6 +663,7 @@ class TalkingObjectsApp {
             card.innerHTML = `
                 <h4>${obj.emoji} ${obj.name}</h4>
                 <p><small>${obj.class}</small></p>
+                <p><small>${obj.isMuted ? 'Muted' : 'Speaking'}</small></p>
                 <div class="dialogue">${obj.dialogue || '...'}</div>
             `;
             display.appendChild(card);
@@ -745,10 +768,170 @@ class TalkingObjectsApp {
         }
         this.updateObjectsDisplay();
         this.clearOverlay();
+        if (this.hoveredObjectId && !this.objects.has(this.hoveredObjectId)) {
+            this.clearHover();
+        }
     }
     
     formatClassLabel(className) {
         return className.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    setupHoverControls() {
+        const cameraSection = document.querySelector('.camera-section');
+        if (!cameraSection || !this.overlay) return;
+
+        const control = document.createElement('div');
+        control.className = 'object-control';
+        control.innerHTML = `
+            <span class="object-control__label"></span>
+            <button type="button" class="object-control__toggle">Speak: On</button>
+        `;
+        cameraSection.appendChild(control);
+
+        this.hoverControl = control;
+        this.hoverControlLabel = control.querySelector('.object-control__label');
+        this.hoverControlToggle = control.querySelector('.object-control__toggle');
+
+        this.overlay.style.pointerEvents = 'auto';
+        this.overlay.addEventListener('pointermove', (event) => this.handlePointerMove(event));
+        this.overlay.addEventListener('pointerdown', (event) => this.handlePointerClick(event));
+        this.overlay.addEventListener('pointerleave', () => this.clearHover());
+
+        this.hoverControlToggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this.toggleHoveredObjectSpeech();
+        });
+    }
+
+    handlePointerMove(event) {
+        if (!this.isRunning || !this.video.videoWidth || !this.video.videoHeight) return;
+
+        const rect = this.video.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
+        const localY = event.clientY - rect.top;
+        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+            this.clearHover();
+            return;
+        }
+
+        const scaleX = this.video.videoWidth / rect.width;
+        const scaleY = this.video.videoHeight / rect.height;
+        const videoX = this.video.videoWidth - localX * scaleX;
+        const videoY = localY * scaleY;
+
+        const hoveredObj = this.getObjectAtPoint(videoX, videoY, false);
+        if (!hoveredObj) {
+            this.clearHover();
+            return;
+        }
+
+        if (this.hoveredObjectId !== hoveredObj.id) {
+            this.hoveredObjectId = hoveredObj.id;
+            this.updateHoverControl(hoveredObj);
+        }
+
+        this.positionHoverControl(hoveredObj);
+    }
+
+    handlePointerClick(event) {
+        if (!this.isRunning || !this.video.videoWidth || !this.video.videoHeight) return;
+
+        const rect = this.video.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
+        const localY = event.clientY - rect.top;
+        if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) return;
+
+        const scaleX = this.video.videoWidth / rect.width;
+        const scaleY = this.video.videoHeight / rect.height;
+        const videoX = this.video.videoWidth - localX * scaleX;
+        const videoY = localY * scaleY;
+
+        const clickedObj = this.getObjectAtPoint(videoX, videoY, true);
+        if (!clickedObj) return;
+
+        this.hoveredObjectId = clickedObj.id;
+        this.toggleHoveredObjectSpeech();
+        this.positionHoverControl(clickedObj);
+    }
+
+    getObjectAtPoint(videoX, videoY, includeMuted = false) {
+        let bestMatch = null;
+        let bestArea = Infinity;
+
+        for (const obj of this.objects.values()) {
+            if (!includeMuted && obj.isMuted) continue;
+            if (videoX < obj.x || videoX > obj.x + obj.width) continue;
+            if (videoY < obj.y || videoY > obj.y + obj.height) continue;
+            const area = obj.width * obj.height;
+            if (area < bestArea) {
+                bestArea = area;
+                bestMatch = obj;
+            }
+        }
+
+        return bestMatch;
+    }
+
+    updateHoverControl(obj) {
+        if (!this.hoverControl || !this.hoverControlLabel || !this.hoverControlToggle) return;
+
+        this.hoverControlLabel.textContent = `${obj.emoji} ${obj.name}`;
+        this.hoverControlToggle.textContent = obj.isMuted ? 'Speak: Off' : 'Speak: On';
+        this.hoverControl.classList.toggle('muted', obj.isMuted);
+        this.hoverControl.classList.toggle('speaking', !obj.isMuted);
+        this.hoverControl.style.display = obj.isMuted ? 'none' : 'flex';
+    }
+
+    positionHoverControl(obj) {
+        if (!this.hoverControl) return;
+
+        const cameraSection = document.querySelector('.camera-section');
+        if (!cameraSection) return;
+
+        const videoRect = this.video.getBoundingClientRect();
+        const containerRect = cameraSection.getBoundingClientRect();
+        const scaleX = videoRect.width / this.video.videoWidth;
+        const scaleY = videoRect.height / this.video.videoHeight;
+
+        const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
+        const screenY = videoRect.top + obj.y * scaleY;
+
+        const localX = screenX - containerRect.left;
+        const localY = screenY - containerRect.top;
+
+        const padding = 8;
+        const maxX = cameraSection.clientWidth - padding;
+        const maxY = cameraSection.clientHeight - padding;
+
+        const clampedX = Math.max(padding, Math.min(localX, maxX));
+        const clampedY = Math.max(padding, Math.min(localY, maxY));
+
+        this.hoverControl.style.left = `${clampedX}px`;
+        this.hoverControl.style.top = `${clampedY}px`;
+    }
+
+    toggleHoveredObjectSpeech() {
+        if (!this.hoveredObjectId) return;
+        const obj = this.objects.get(this.hoveredObjectId);
+        if (!obj) return;
+
+        obj.isMuted = !obj.isMuted;
+        if (obj.isMuted && obj.speechBubble) {
+            obj.speechBubble.remove();
+            obj.speechBubble = null;
+            obj.dialogue = null;
+        }
+
+        this.updateHoverControl(obj);
+        this.updateObjectsDisplay();
+    }
+
+    clearHover() {
+        this.hoveredObjectId = null;
+        if (this.hoverControl) {
+            this.hoverControl.style.display = 'none';
+        }
     }
 }
 
