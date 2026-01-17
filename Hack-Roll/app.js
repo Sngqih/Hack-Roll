@@ -627,6 +627,21 @@ class TalkingObjectsApp {
             this.overlayCtx.textAlign = 'center';
             this.overlayCtx.textBaseline = 'middle';
             
+            // Faint blue glow around detected object bounds
+            const glowPadding = 6;
+            this.overlayCtx.save();
+            this.overlayCtx.shadowColor = 'rgba(96, 165, 250, 0.5)';
+            this.overlayCtx.shadowBlur = 18;
+            this.overlayCtx.strokeStyle = 'rgba(147, 197, 253, 0.7)';
+            this.overlayCtx.lineWidth = 3;
+            this.overlayCtx.strokeRect(
+                obj.x - glowPadding,
+                obj.y - glowPadding,
+                obj.width + glowPadding * 2,
+                obj.height + glowPadding * 2
+            );
+            this.overlayCtx.restore();
+
             // Draw circle background
             this.overlayCtx.beginPath();
             this.overlayCtx.arc(obj.centerX, obj.centerY, faceSize / 2 + 5, 0, Math.PI * 2);
