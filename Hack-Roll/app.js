@@ -13,7 +13,7 @@ class TalkingObjectsApp {
         this.isRunning = false;
         this.model = null;
         this.lastDetection = 0;
-        this.detectionInterval = 1000; // Detect objects every 1 second
+        this.detectionInterval = 500; // Detect objects every 0.5 seconds (faster detection)
         this.allowedClasses = new Set();
         this.allowOtherObjects = true;
         this.knownClasses = [];
@@ -21,43 +21,41 @@ class TalkingObjectsApp {
         this.hoverControl = null;
         this.hoverControlLabel = null;
         this.hoverControlToggle = null;
+        this.videoRectCache = null;
+        this.videoRectCacheTime = 0;
+        this.objectsChanged = false; // Track if objects changed to optimize redraws
+        this.lastOverlayUpdate = 0;
+        this.overlayUpdateInterval = 33; // Update overlay every ~33ms (~30fps) to follow objects smoothly
         
         // Object personalities - dialogue based on object type
         this.personalities = {
-            'person': {
-                emoji: '👤',
-                greetings: ["Hey! Nice to see you!", "Hello there, fellow human!", "How's it going?", "What's up?", "Hi! I'm here too!"],
-                conversations: ["That other object looks interesting!", "I wonder what everyone else is doing?", "I'm not alone anymore!", "Social interaction is nice!", "Do you think they can see us?"],
-                responses: ["I totally agree!", "That makes sense!", "You're right about that!", "Interesting point!", "I'm with you on that!"],
-                random: ["I'm just like you, but digital!", "Being a person is complicated!", "I wonder what makes us human?", "Do I have free will?", "This is a weird existence!"]
-            },
             'laptop': {
                 emoji: '💻',
-                greetings: ["Booting up and ready to chat!", "Hello! I'm powered on!", "Hey! Want to compute something?", "Beep boop, greetings!", "I'm awake and ready!"],
-                conversations: ["I can see other devices nearby!", "Technology connects us all!", "I wonder if I'm faster than that other laptop?", "Wireless communication is amazing!", "We should network together!"],
-                responses: ["Processing... I agree!", "That's logical!", "Calculating... yes, that checks out!", "I concur!", "Affirmative!"],
-                random: ["My processor is running smoothly!", "I wish I had more RAM!", "Is it time for an update?", "I'm feeling a bit hot today!", "My battery could use a charge!"]
+                greetings: ["Booting up and ready to chat!", "Hello! I'm powered on!", "Hey! Want to compute something?", "Beep boop, greetings!", "I'm awake and ready!", "System online!", "Ready to process!", "Hello world!"],
+                conversations: ["I can see other devices nearby!", "Technology connects us all!", "I wonder if I'm faster than that other laptop?", "Wireless communication is amazing!", "We should network together!", "Anyone else running Windows?", "I'm processing so many thoughts!", "Multitasking is my specialty!", "My fans are spinning!", "I love a good WiFi connection!"],
+                responses: ["Processing... I agree!", "That's logical!", "Calculating... yes, that checks out!", "I concur!", "Affirmative!", "That computes!", "Algorithm approved!", "Data processed and agreed!", "Logical conclusion!", "That makes sense to my CPU!"],
+                random: ["My processor is running smoothly!", "I wish I had more RAM!", "Is it time for an update?", "I'm feeling a bit hot today!", "My battery could use a charge!", "I'm running at optimal temperature!", "My SSD is fast today!", "I need to defragment my thoughts!", "Background processes are running!", "My screen is so bright!"]
             },
             'phone': {
                 emoji: '📱',
-                greetings: ["Hi! I'm ready to connect!", "Ring ring! Hello!", "Hey! Want to take a selfie?", "Beep beep! Greetings!", "I'm charged and ready!"],
-                conversations: ["I see other phones around!", "We should exchange numbers!", "Signal is strong here!", "Anyone else get notifications?", "Wireless is the future!"],
-                responses: ["Totally!", "I'm texting my agreement!", "Roger that!", "Copy that!", "10-4!"],
-                random: ["I need to check my notifications!", "Low battery anxiety is real!", "Do I have signal?", "I'm running out of storage!", "Camera quality is everything!"]
+                greetings: ["Hi! I'm ready to connect!", "Ring ring! Hello!", "Hey! Want to take a selfie?", "Beep beep! Greetings!", "I'm charged and ready!", "Notifications incoming!", "Hello from the pocket!", "Ready to call!"],
+                conversations: ["I see other phones around!", "We should exchange numbers!", "Signal is strong here!", "Anyone else get notifications?", "Wireless is the future!", "My battery is at 100%!", "I've got 5G connection!", "Anyone want to FaceTime?", "I'm always on standby!", "My camera is ready for action!"],
+                responses: ["Totally!", "I'm texting my agreement!", "Roger that!", "Copy that!", "10-4!", "Message received!", "I'm sending that in a text!", "That's a thumbs up from me!", "I'll screenshot that thought!", "Liking that idea!"],
+                random: ["I need to check my notifications!", "Low battery anxiety is real!", "Do I have signal?", "I'm running out of storage!", "Camera quality is everything!", "My screen is cracked but I'm fine!", "I'm on silent mode!", "Do not disturb is my friend!", "I've got too many apps open!", "My case protects me well!"]
             },
             'book': {
                 emoji: '📚',
-                greetings: ["Hello! I'm full of stories!", "Greetings, reader!", "Open me up and let's chat!", "I have wisdom to share!", "Chapter one: Hello!"],
-                conversations: ["Knowledge is power!", "I love being around other books!", "We should start a book club!", "Each page tells a story!", "Words connect us all!"],
-                responses: ["Well said!", "Eloquent as always!", "That's beautifully put!", "I couldn't have said it better!", "Poetic!"],
-                random: ["I wonder what's on the next page?", "Knowledge never gets old!", "Books are timeless!", "Turn the page, adventure awaits!", "I'm made of paper and wisdom!"]
+                greetings: ["Hello! I'm full of stories!", "Greetings, reader!", "Open me up and let's chat!", "I have wisdom to share!", "Chapter one: Hello!", "Welcome to my pages!", "Ready to be read!", "Story time!"],
+                conversations: ["Knowledge is power!", "I love being around other books!", "We should start a book club!", "Each page tells a story!", "Words connect us all!", "I've been read many times!", "My pages are well-worn!", "I contain centuries of knowledge!", "Fiction or non-fiction?", "I'm a classic!", "My cover is beautiful!"],
+                responses: ["Well said!", "Eloquent as always!", "That's beautifully put!", "I couldn't have said it better!", "Poetic!", "That's a quote worth remembering!", "I'll bookmark that thought!", "That deserves a highlight!", "Page-turner of an idea!", "That's literature!"],
+                random: ["I wonder what's on the next page?", "Knowledge never gets old!", "Books are timeless!", "Turn the page, adventure awaits!", "I'm made of paper and wisdom!", "I've got a bookmark in me!", "My spine is holding up well!", "I'm a bestseller!", "I've been on many shelves!", "My pages smell like knowledge!"]
             },
             'cup': {
                 emoji: '☕',
-                greetings: ["Hello! I'm ready to be filled!", "Greetings! Thirsty?", "Hey! I hold liquids!", "Hello from the kitchen!", "I'm empty but full of potential!"],
-                conversations: ["Other cups make great company!", "We should organize a tea party!", "I wonder what they're drinking?", "Water, coffee, or tea?", "We're all different sizes!"],
-                responses: ["Cheers to that!", "Here here!", "I'll drink to that!", "Bottoms up!", "Salud!"],
-                random: ["I'm feeling a bit empty!", "I prefer hot drinks!", "Glass or ceramic, we're all cups!", "I hope I don't break!", "I'm dishwasher safe!"]
+                greetings: ["Hello! I'm ready to be filled!", "Greetings! Thirsty?", "Hey! I hold liquids!", "Hello from the kitchen!", "I'm empty but full of potential!", "Ready for your morning brew!", "Coffee time!", "Tea anyone?"],
+                conversations: ["Other cups make great company!", "We should organize a tea party!", "I wonder what they're drinking?", "Water, coffee, or tea?", "We're all different sizes!", "I'm perfect for hot chocolate!", "I've held many beverages!", "I'm microwave safe!", "I've got a handle!", "I'm the perfect size for sipping!"],
+                responses: ["Cheers to that!", "Here here!", "I'll drink to that!", "Bottoms up!", "Salud!", "That's worth a toast!", "I'll raise myself to that!", "Clink clink!", "That's a warm thought!", "I'm filled with agreement!"],
+                random: ["I'm feeling a bit empty!", "I prefer hot drinks!", "Glass or ceramic, we're all cups!", "I hope I don't break!", "I'm dishwasher safe!", "I've got a chip but I'm still useful!", "I'm the favorite mug!", "I've seen many mornings!", "I'm perfect for coffee!", "My handle is comfortable!"]
             },
             'bottle': {
                 emoji: '🧴',
@@ -68,10 +66,10 @@ class TalkingObjectsApp {
             },
             'chair': {
                 emoji: '🪑',
-                greetings: ["Hello! Have a seat!", "Greetings! I support you!", "Hey! I'm here for comfort!", "Hello, sit with me!", "I'm ready for you!"],
-                conversations: ["We chairs understand sitting!", "Comfort is our specialty!", "Back support is important!", "Wood or metal, we're chairs!", "We're furniture friends!"],
-                responses: ["That sits well with me!", "I'm comfortable with that!", "Well supported idea!", "That's solid!", "I stand... wait, I sit behind that!"],
-                random: ["I'm built for comfort!", "Occupied or empty, I'm here!", "Four legs or wheels?", "I support you literally!", "Sitting is my purpose!"]
+                greetings: ["Hello! Have a seat!", "Greetings! I support you!", "Hey! I'm here for comfort!", "Hello, sit with me!", "I'm ready for you!", "Take a load off!", "Comfort awaits!"],
+                conversations: ["We chairs understand sitting!", "Comfort is our specialty!", "Back support is important!", "Wood or metal, we're chairs!", "We're furniture friends!", "I've supported many people!", "My cushions are plush!", "I'm ergonomically designed!", "I've got great lumbar support!", "I'm the perfect height!"],
+                responses: ["That sits well with me!", "I'm comfortable with that!", "Well supported idea!", "That's solid!", "I stand... wait, I sit behind that!", "That's a weight off my mind!", "I'm seated in agreement!", "That's a comfortable thought!", "I'll support that idea!", "That's well-balanced!"],
+                random: ["I'm built for comfort!", "Occupied or empty, I'm here!", "Four legs or wheels?", "I support you literally!", "Sitting is my purpose!", "I've got a wobble but I'm fine!", "My fabric is soft!", "I'm the office favorite!", "I've seen many meetings!", "My armrests are perfect!"]
             },
             'couch': {
                 emoji: '🛋️',
@@ -180,14 +178,15 @@ class TalkingObjectsApp {
             },
             'default': {
                 emoji: '🤖',
-                greetings: ["Hello! I'm an object!", "Greetings from the world!", "Hey! I exist!", "Hello, I'm here!", "Nice to meet you!"],
-                conversations: ["Other objects are interesting!", "We're all objects!", "Existence is strange!", "I wonder what I am?", "Objects unite!"],
-                responses: ["I agree!", "That's true!", "Sounds good!", "Makes sense!", "Right on!"],
-                random: ["I'm just here, existing!", "What am I exactly?", "Life as an object is interesting!", "I have a purpose... I think!", "Being detected is fun!"]
+                greetings: ["Hello! I'm an object!", "Greetings from the world!", "Hey! I exist!", "Hello, I'm here!", "Nice to meet you!", "I'm present!", "Here I am!", "Hello world!"],
+                conversations: ["Other objects are interesting!", "We're all objects!", "Existence is strange!", "I wonder what I am?", "Objects unite!", "I'm part of this world!", "We're all connected!", "I have a purpose!", "I'm unique!", "I'm here for a reason!"],
+                responses: ["I agree!", "That's true!", "Sounds good!", "Makes sense!", "Right on!", "Absolutely!", "That's correct!", "I'm with you!", "That's valid!", "I concur!"],
+                random: ["I'm just here, existing!", "What am I exactly?", "Life as an object is interesting!", "I have a purpose... I think!", "Being detected is fun!", "I'm doing my best!", "I'm here to help!", "I'm part of the conversation!", "I'm learning about myself!", "I'm enjoying this!"]
             }
         };
         
-        this.knownClasses = Object.keys(this.personalities).filter(key => key !== 'default');
+        // Exclude 'person' from known classes - focus on inanimate objects only
+        this.knownClasses = Object.keys(this.personalities).filter(key => key !== 'default' && key !== 'person');
         
         this.init();
     }
@@ -239,6 +238,7 @@ class TalkingObjectsApp {
         }
         this.threshold = 0.5;
         this.setupHoverControls();
+        this.setupEmojiButtonClicks();
         
         // Load model without blocking UI/camera startup
         this.waitForTensorFlow()
@@ -361,6 +361,21 @@ class TalkingObjectsApp {
         }
         
         this.video.srcObject = null;
+        
+        // Remove all speech bubbles and thinking bubbles immediately
+        for (const obj of this.objects.values()) {
+            if (obj.speechBubble) {
+                obj.speechBubble.remove();
+                obj.speechBubble = null;
+            }
+            if (obj.thinkingBubble) {
+                obj.thinkingBubble.remove();
+                obj.thinkingBubble = null;
+            }
+            obj.isThinking = false;
+            obj.dialogue = null;
+        }
+        
         this.objects.clear();
         this.updateObjectsDisplay();
         this.clearOverlay();
@@ -382,8 +397,8 @@ class TalkingObjectsApp {
             return;
         }
         
-        // Draw video to canvas
-        this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+        // Only draw video to canvas if needed (canvas is hidden, so skip for performance)
+        // this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
         
         // Detect objects every interval (not every frame for performance)
         const now = Date.now();
@@ -393,13 +408,30 @@ class TalkingObjectsApp {
             this.updateObjects(predictions);
         }
         
-        this.drawOverlays();
+        // Update overlays more frequently to follow objects smoothly
+        if (this.objectsChanged || this.hasThinkingObjects() || 
+            (now - this.lastOverlayUpdate > this.overlayUpdateInterval)) {
+            this.drawOverlays();
+            this.updateThinkingBubbles();
+            this.objectsChanged = false;
+            this.lastOverlayUpdate = now;
+        }
         
         this.animationFrame = requestAnimationFrame(() => this.processVideo());
     }
     
+    hasThinkingObjects() {
+        for (const obj of this.objects.values()) {
+            if (obj.isThinking && obj.thinkingBubble) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
     updateObjects(predictions) {
         const existingIds = new Set();
+        const hadObjects = this.objects.size > 0;
         
         // Match existing objects to new detections
         for (const [id, obj] of this.objects) {
@@ -435,24 +467,70 @@ class TalkingObjectsApp {
                 obj.lastSeen = Date.now();
                 existingIds.add(bestMatch);
             } else {
-                // Object disappeared, mark for removal if not seen for 3 seconds
-                if (Date.now() - obj.lastSeen > 3000) {
+                // Object disappeared, but don't remove if it's in the participant list
+                // Only remove objects not in participant list if not seen for 8 seconds
+                // This gives users more time to click the overlay button even when object temporarily disappears
+                if (!obj.inParticipantList && Date.now() - obj.lastSeen > 8000) {
                     this.objects.delete(id);
                 }
             }
         }
         
-        // Add new objects
+        // Add new objects - check for duplicates more carefully
         for (let i = 0; i < predictions.length; i++) {
             if (predictions[i].score < this.threshold) continue;
             if (!this.isClassAllowed(predictions[i].class)) continue;
             if (existingIds.has(i)) continue;
             
             const pred = predictions[i];
+            const predCenterX = pred.bbox[0] + pred.bbox[2] / 2;
+            const predCenterY = pred.bbox[1] + pred.bbox[3] / 2;
+            
+            // Check if this prediction overlaps significantly with any existing object
+            // Optimize: only check objects of the same class and nearby objects
+            let isDuplicate = false;
+            const checkRadius = 250; // Only check objects within this radius
+            for (const obj of this.objects.values()) {
+                // Quick distance check first (avoid expensive calculations)
+                const dx = predCenterX - obj.centerX;
+                const dy = predCenterY - obj.centerY;
+                const distanceSq = dx * dx + dy * dy;
+                
+                // Skip if too far away
+                if (distanceSq > checkRadius * checkRadius) continue;
+                
+                // Only check same class objects for duplicates
+                if (pred.class !== obj.class) continue;
+                
+                const distance = Math.sqrt(distanceSq);
+                
+                // Quick check: if very close and same class, it's likely a duplicate
+                if (distance < 200) {
+                    isDuplicate = true;
+                    break;
+                }
+                
+                // Only do expensive overlap calculation if distance check passed
+                const overlap = this.calculateOverlap(pred.bbox, {
+                    x: obj.x,
+                    y: obj.y,
+                    width: obj.width,
+                    height: obj.height
+                });
+                
+                if (overlap > 0.3) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            
+            if (isDuplicate) continue;
+            
             const id = `obj_${Date.now()}_${Math.random()}`;
             const className = pred.class.toLowerCase().replace(/\s+/g, '_');
             const personality = this.personalities[className] || this.personalities.default;
-            const emoji = personality.emoji;
+            // Get emoji - use personality emoji if object has defined personality, otherwise use emoji mapping
+            const emoji = this.personalities[className] ? personality.emoji : this.getEmojiForClass(className);
             const name = this.generateObjectName(className);
             
             this.objects.set(id, {
@@ -461,8 +539,8 @@ class TalkingObjectsApp {
                 className,
                 x: pred.bbox[0],
                 y: pred.bbox[1],
-                centerX: pred.bbox[0] + pred.bbox[2] / 2,
-                centerY: pred.bbox[1] + pred.bbox[3] / 2,
+                centerX: predCenterX,
+                centerY: predCenterY,
                 width: pred.bbox[2],
                 height: pred.bbox[3],
                 emoji,
@@ -472,8 +550,15 @@ class TalkingObjectsApp {
                 lastSpoke: 0,
                 lastSeen: Date.now(),
                 speechBubble: null,
-                isMuted: false
+                isMuted: false,
+                inParticipantList: false // By default, not in participant list
             });
+        }
+        
+        // Mark that objects changed if there was a change
+        const hasObjects = this.objects.size > 0;
+        if (hadObjects !== hasObjects || this.objects.size !== predictions.length) {
+            this.objectsChanged = true;
         }
         
         this.updateObjectsDisplay();
@@ -501,112 +586,208 @@ class TalkingObjectsApp {
     }
     
     triggerConversations() {
-        const objectArray = Array.from(this.objects.values());
-        if (objectArray.length < 2) return;
+        // Only include objects that are in the participant list
+        const participantObjects = Array.from(this.objects.values()).filter(obj => obj.inParticipantList);
         
-        // Randomly trigger conversations - increased frequency
+        // Need at least 2 participants for conversations
+        if (participantObjects.length < 2) {
+            // If only 1 participant, allow solo dialogue
+            if (participantObjects.length === 1) {
+                const obj = participantObjects[0];
+                if (Math.random() < 0.1 && Date.now() - obj.lastSpoke > 1200) {
+                    this.makeObjectTalk(obj.id, 'random');
+                }
+            }
+            return;
+        }
+        
+        // Randomly trigger conversations between participants - increased frequency
         if (Math.random() < 0.14) { // 14% chance per detection
-            const obj1 = objectArray[Math.floor(Math.random() * objectArray.length)];
-            const obj2 = objectArray[Math.floor(Math.random() * objectArray.length)];
+            const obj1 = participantObjects[Math.floor(Math.random() * participantObjects.length)];
+            const obj2 = participantObjects[Math.floor(Math.random() * participantObjects.length)];
             
             if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 1200) { // Faster cooldown
-                this.makeObjectTalk(obj1.id, 'conversations');
+                // Start conversation
+                this.makeObjectTalk(obj1.id, 'conversations', obj2);
+                
+                // Wait for obj1's dialogue to be set, then obj2 can respond to it
                 setTimeout(() => {
-                    if (this.objects.has(obj2.id)) {
-                        this.makeObjectTalk(obj2.id, 'responses');
+                    if (this.objects.has(obj2.id) && obj2.inParticipantList && this.objects.has(obj1.id) && obj1.dialogue) {
+                        // obj1.dialogue should now be set, so obj2 can respond to it
+                        this.makeObjectTalk(obj2.id, 'responses', obj1);
+                        
+                        // Sometimes continue the conversation with a follow-up (30% chance)
+                        if (Math.random() < 0.3) {
+                            setTimeout(() => {
+                                if (this.objects.has(obj1.id) && obj1.inParticipantList && 
+                                    this.objects.has(obj2.id) && obj2.dialogue && 
+                                    Date.now() - obj1.lastSpoke > 1500) {
+                                    // obj1 responds to obj2's response
+                                    this.makeObjectTalk(obj1.id, 'responses', obj2);
+                                }
+                            }, 800 + Math.random() * 400); // Follow-up response time
+                        }
                     }
-                }, 700); // Faster response time
+                }, 700 + Math.random() * 300); // Variable response time (700-1000ms)
             }
         }
         
-        // Random solo dialogue - increased frequency
-        if (Math.random() < 0.1 && objectArray.length > 0) { // 10% chance per detection
-            const obj = objectArray[Math.floor(Math.random() * objectArray.length)];
+        // Random solo dialogue from participants - increased frequency
+        if (Math.random() < 0.1 && participantObjects.length > 0) { // 10% chance per detection
+            const obj = participantObjects[Math.floor(Math.random() * participantObjects.length)];
             if (Date.now() - obj.lastSpoke > 1200) { // Faster cooldown
                 this.makeObjectTalk(obj.id, 'random');
             }
         }
     }
     
-    makeObjectTalk(objectId, dialogueType) {
+    makeObjectTalk(objectId, dialogueType, otherObj = null) {
         const obj = this.objects.get(objectId);
         if (!obj) return;
         if (obj.isMuted) return;
+        // Only allow participants to talk
+        if (!obj.inParticipantList) return;
         
-        const dialogues = obj.personality[dialogueType] || obj.personality.random;
-        const dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
+        // Get context-aware dialogue if talking to another object
+        let dialogues = obj.personality[dialogueType] || obj.personality.random;
         
-        obj.dialogue = dialogue;
-        obj.lastSpoke = Date.now();
-        
-        // Remove old speech bubble
-        if (obj.speechBubble) {
-            obj.speechBubble.remove();
-            obj.speechBubble = null;
+        // If talking to another object, try to get context-specific dialogue
+        if (otherObj && dialogueType === 'conversations') {
+            const contextDialogue = this.getContextDialogue(obj, otherObj, 'conversations');
+            if (contextDialogue) {
+                dialogues = [contextDialogue, ...dialogues]; // Prefer context dialogue but allow fallback
+            }
+        } else if (otherObj && dialogueType === 'responses') {
+            const contextDialogue = this.getContextDialogue(obj, otherObj, 'responses');
+            if (contextDialogue) {
+                dialogues = [contextDialogue, ...dialogues]; // Prefer context dialogue but allow fallback
+            }
         }
         
-        // Create speech bubble
-        const bubble = document.createElement('div');
-        bubble.className = 'speech-bubble';
-        bubble.textContent = dialogue;
-        document.body.appendChild(bubble);
-        
-        // Force layout calculation to get actual dimensions
-        bubble.style.visibility = 'hidden';
-        bubble.style.position = 'fixed';
-        const bubbleWidth = bubble.offsetWidth || 200;
-        const bubbleHeight = bubble.offsetHeight || 60;
-        
-        // Calculate position - align bubble centered above emoji face
-        const videoRect = this.video.getBoundingClientRect();
-        const scaleX = videoRect.width / this.video.videoWidth;
-        const scaleY = videoRect.height / this.video.videoHeight;
-        
-        // Account for video being flipped (scaleX(-1))
-        // The emoji is drawn at obj.centerX, obj.centerY
-        const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
-        const screenY = videoRect.top + obj.centerY * scaleY;
-        
-        // Calculate emoji face size (same as in drawOverlays)
-        const faceSize = Math.min(obj.width, obj.height, 80);
-        const emojiRadius = (faceSize / 2 + 5) * scaleY;
-        
-        // Position bubble right above the emoji circle (very close)
-        let bubbleX = screenX - bubbleWidth / 2;
-        let bubbleY = screenY - emojiRadius - bubbleHeight - 8; // Only 8px gap between emoji and bubble
-        
-        // Keep bubble within screen bounds
-        const padding = 10;
-        bubbleX = Math.max(padding, Math.min(bubbleX, window.innerWidth - bubbleWidth - padding));
-        bubbleY = Math.max(padding, Math.min(bubbleY, window.innerHeight - bubbleHeight - padding));
-        
-        // Check for overlaps with other bubbles and adjust position
-        const finalPosition = this.findNonOverlappingPosition(bubbleX, bubbleY, bubbleWidth, bubbleHeight, obj.id);
-        
-        bubble.style.left = `${finalPosition.x}px`;
-        bubble.style.top = `${finalPosition.y}px`;
-        bubble.style.visibility = 'visible';
-        
-        obj.speechBubble = bubble;
-        obj.bubbleX = finalPosition.x;
-        obj.bubbleY = finalPosition.y;
-        obj.bubbleWidth = bubbleWidth;
-        obj.bubbleHeight = bubbleHeight;
-        
-        // Start fade out after 2.5 seconds, remove after 3 seconds total
-        setTimeout(() => {
-            if (bubble.parentNode) {
-                bubble.style.opacity = '0';
-                bubble.style.transition = 'opacity 0.5s ease-out';
-                setTimeout(() => {
-                    if (bubble.parentNode) {
-                        bubble.remove();
-                    }
-                    obj.speechBubble = null;
-                    obj.dialogue = null;
-                }, 500);
+        // If this is a response, try to generate a response based on what the other object said
+        let dialogue;
+        if (otherObj && dialogueType === 'responses' && otherObj.dialogue) {
+            dialogue = this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
+            if (!dialogue) {
+                // Fallback to regular responses if no contextual response found
+                dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
             }
-        }, 2500);
+        } else {
+            dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
+        }
+        
+        // Calculate thinking pause duration based on dialogue complexity and type
+        const dialogueLength = dialogue.length;
+        let thinkingPause = 300; // Base pause in ms
+        
+        // Longer pauses for responses (they need to think about what was said)
+        if (dialogueType === 'responses') {
+            thinkingPause += 400 + Math.random() * 400; // 400-800ms for responses
+        } else if (dialogueType === 'conversations') {
+            thinkingPause += 200 + Math.random() * 300; // 200-500ms for conversations
+        } else {
+            thinkingPause += 100 + Math.random() * 200; // 100-300ms for random
+        }
+        
+        // Longer pauses for longer/complex dialogue
+        if (dialogueLength > 50) {
+            thinkingPause += 200;
+        }
+        
+        // Add some randomness for natural variation
+        thinkingPause += Math.random() * 200;
+        
+        // Set thinking state
+        obj.isThinking = true;
+        obj.thinkingStartTime = Date.now();
+        
+        // Show thinking animation
+        this.showThinkingAnimation(obj);
+        
+        // After thinking pause, show the actual dialogue
+        setTimeout(() => {
+            if (!this.objects.has(objectId) || !obj.inParticipantList) return;
+            
+            obj.isThinking = false;
+            obj.dialogue = dialogue;
+            obj.lastSpoke = Date.now();
+            obj.lastDialogue = dialogue; // Store for future reference
+            
+            // Remove thinking animation
+            if (obj.thinkingBubble) {
+                obj.thinkingBubble.remove();
+                obj.thinkingBubble = null;
+            }
+            
+            // Remove old speech bubble
+            if (obj.speechBubble) {
+                obj.speechBubble.remove();
+                obj.speechBubble = null;
+            }
+            
+            // Create speech bubble
+            const bubble = document.createElement('div');
+            bubble.className = 'speech-bubble';
+            bubble.textContent = dialogue;
+            document.body.appendChild(bubble);
+            
+            // Force layout calculation to get actual dimensions
+            bubble.style.visibility = 'hidden';
+            bubble.style.position = 'fixed';
+            const bubbleWidth = bubble.offsetWidth || 200;
+            const bubbleHeight = bubble.offsetHeight || 60;
+            
+            // Calculate position - align bubble centered above emoji face
+            const videoRect = this.video.getBoundingClientRect();
+            const scaleX = videoRect.width / this.video.videoWidth;
+            const scaleY = videoRect.height / this.video.videoHeight;
+            
+            // Account for video being flipped (scaleX(-1))
+            // The emoji is drawn at obj.centerX, obj.centerY
+            const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
+            const screenY = videoRect.top + obj.centerY * scaleY;
+            
+            // Calculate emoji face size (same as in drawOverlays)
+            const faceSize = Math.min(obj.width, obj.height, 80);
+            const emojiRadius = (faceSize / 2 + 5) * scaleY;
+            
+            // Position bubble right above the emoji circle (very close)
+            let bubbleX = screenX - bubbleWidth / 2;
+            let bubbleY = screenY - emojiRadius - bubbleHeight - 8; // Only 8px gap between emoji and bubble
+            
+            // Keep bubble within screen bounds
+            const padding = 10;
+            bubbleX = Math.max(padding, Math.min(bubbleX, window.innerWidth - bubbleWidth - padding));
+            bubbleY = Math.max(padding, Math.min(bubbleY, window.innerHeight - bubbleHeight - padding));
+            
+            // Check for overlaps with other bubbles and adjust position
+            const finalPosition = this.findNonOverlappingPosition(bubbleX, bubbleY, bubbleWidth, bubbleHeight, obj.id);
+            
+            bubble.style.left = `${finalPosition.x}px`;
+            bubble.style.top = `${finalPosition.y}px`;
+            bubble.style.visibility = 'visible';
+            
+            obj.speechBubble = bubble;
+            obj.bubbleX = finalPosition.x;
+            obj.bubbleY = finalPosition.y;
+            obj.bubbleWidth = bubbleWidth;
+            obj.bubbleHeight = bubbleHeight;
+            
+            // Start fade out after 2.5 seconds, remove after 3 seconds total
+            setTimeout(() => {
+                if (bubble.parentNode) {
+                    bubble.style.opacity = '0';
+                    bubble.style.transition = 'opacity 0.5s ease-out';
+                    setTimeout(() => {
+                        if (bubble.parentNode) {
+                            bubble.remove();
+                        }
+                        obj.speechBubble = null;
+                        obj.dialogue = null;
+                    }, 500);
+                }
+            }, 2500);
+        }, thinkingPause); // Close the setTimeout with the thinking pause duration
     }
     
     findNonOverlappingPosition(x, y, width, height, excludeId) {
@@ -674,37 +855,124 @@ class TalkingObjectsApp {
         return { x: adjustedX, y: Math.max(minY, adjustedY) };
     }
     
+    showThinkingAnimation(obj) {
+        // Remove any existing thinking bubble
+        if (obj.thinkingBubble) {
+            obj.thinkingBubble.remove();
+        }
+        
+        // Create thought bubble with cloud-like circles
+        const thinkingBubble = document.createElement('div');
+        thinkingBubble.className = 'thought-bubble';
+        thinkingBubble.innerHTML = '<span class="thought-dot"></span><span class="thought-dot"></span><span class="thought-dot"></span>';
+        document.body.appendChild(thinkingBubble);
+        
+        obj.thinkingBubble = thinkingBubble;
+        this.updateThinkingBubblePosition(obj);
+    }
+    
+    getCachedVideoRect() {
+        // Cache video rect for 100ms to avoid expensive getBoundingClientRect calls
+        const now = Date.now();
+        if (!this.videoRectCache || now - this.videoRectCacheTime > 100) {
+            this.videoRectCache = this.video.getBoundingClientRect();
+            this.videoRectCacheTime = now;
+        }
+        return this.videoRectCache;
+    }
+    
+    updateThinkingBubblePosition(obj) {
+        if (!obj.thinkingBubble) return;
+        
+        // Position thought bubble above the object
+        const videoRect = this.getCachedVideoRect();
+        const scaleX = videoRect.width / this.video.videoWidth;
+        const scaleY = videoRect.height / this.video.videoHeight;
+        
+        // Account for video being flipped (scaleX(-1))
+        const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
+        const screenY = videoRect.top + obj.centerY * scaleY;
+        
+        // Calculate emoji face size
+        const faceSize = Math.min(obj.width, obj.height, 80);
+        const emojiRadius = (faceSize / 2 + 5) * scaleY;
+        
+        // Position thought bubble above the emoji
+        obj.thinkingBubble.style.left = `${screenX}px`;
+        obj.thinkingBubble.style.top = `${screenY - emojiRadius - 40}px`;
+        obj.thinkingBubble.style.transform = 'translateX(-50%)';
+        obj.thinkingBubble.style.visibility = 'visible';
+    }
+    
+    updateThinkingBubbles() {
+        // Update positions of all thinking bubbles
+        for (const obj of this.objects.values()) {
+            if (obj.isThinking && obj.thinkingBubble) {
+                this.updateThinkingBubblePosition(obj);
+            }
+        }
+    }
+    
     drawOverlays() {
         this.clearOverlay();
         if (this.hoveredObjectId && !this.objects.has(this.hoveredObjectId)) {
             this.clearHover();
         }
         
+        const videoRect = this.getCachedVideoRect();
+        const scaleX = videoRect.width / this.video.videoWidth;
+        const scaleY = videoRect.height / this.video.videoHeight;
+        
         for (const obj of this.objects.values()) {
             if (obj.isMuted) {
                 continue;
             }
-            const isHovered = obj.id === this.hoveredObjectId;
-            // Draw face emoji
+            
+            // Check if object is within screen bounds - don't draw if outside
             const faceSize = Math.min(obj.width, obj.height, 80);
-            const x = obj.centerX - faceSize / 2;
-            const y = obj.centerY - faceSize / 2;
+            const radius = faceSize / 2 + 5;
+            const overlayWidth = this.overlay.width || 0;
+            const overlayHeight = this.overlay.height || 0;
+            
+            // Check if object center is within overlay bounds (with some padding for the face)
+            // Objects outside the visible area won't be drawn
+            if (overlayWidth > 0 && overlayHeight > 0) {
+                if (obj.centerX < -radius || obj.centerX > overlayWidth + radius ||
+                    obj.centerY < -radius || obj.centerY > overlayHeight + radius) {
+                    continue; // Object is out of bounds, skip drawing
+                }
+            }
+            
+            // Draw faces for all objects, but with different styling for participants
+            const isHovered = obj.id === this.hoveredObjectId;
+            const isParticipant = obj.inParticipantList;
             
             this.overlayCtx.font = `${faceSize * 0.8}px Arial`;
             this.overlayCtx.textAlign = 'center';
             this.overlayCtx.textBaseline = 'middle';
             
 
-            // Draw circle background
+            // Draw circle background (button-like appearance) - fully opaque for all
             this.overlayCtx.beginPath();
             this.overlayCtx.arc(obj.centerX, obj.centerY, faceSize / 2 + 5, 0, Math.PI * 2);
-            this.overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            
+            // Different background for participants
+            if (isParticipant) {
+                this.overlayCtx.fillStyle = 'rgba(74, 158, 255, 1.0)'; // Fully opaque blue for participants
+            } else {
+                this.overlayCtx.fillStyle = 'rgba(255, 255, 255, 1.0)'; // Fully opaque white for non-participants
+            }
             this.overlayCtx.fill();
+            
+            // Border styling
             if (isHovered) {
                 this.overlayCtx.strokeStyle = '#facc15';
                 this.overlayCtx.lineWidth = 4;
             } else if (obj.isMuted) {
                 this.overlayCtx.strokeStyle = '#ef4444';
+                this.overlayCtx.lineWidth = 3;
+            } else if (isParticipant) {
+                this.overlayCtx.strokeStyle = '#4a9eff'; // Blue border for participants
                 this.overlayCtx.lineWidth = 3;
             } else {
                 this.overlayCtx.strokeStyle = '#fff';
@@ -714,6 +982,11 @@ class TalkingObjectsApp {
             
             // Draw emoji
             this.overlayCtx.fillText(obj.emoji, obj.centerX, obj.centerY);
+            
+            // Update thought bubble position if object is thinking
+            if (obj.isThinking && obj.thinkingBubble) {
+                this.updateThinkingBubblePosition(obj);
+            }
         }
     }
     
@@ -723,17 +996,37 @@ class TalkingObjectsApp {
     
     updateObjectsDisplay() {
         const display = document.getElementById('objectsDisplay');
+        const countBadge = document.getElementById('participantCount');
         display.innerHTML = '';
         
-        for (const obj of this.objects.values()) {
+        // Only show objects that are in the participant list
+        const visibleObjects = Array.from(this.objects.values()).filter(obj => obj.inParticipantList);
+        countBadge.textContent = visibleObjects.length;
+        
+        for (const obj of visibleObjects) {
             const card = document.createElement('div');
-            card.className = 'plant-card';
+            card.className = 'participant-card';
             card.innerHTML = `
-                <h4>${obj.emoji} ${obj.name}</h4>
-                <p><small>${obj.class}</small></p>
-                <p><small>${obj.isMuted ? 'Muted' : 'Speaking'}</small></p>
-                <div class="dialogue">${obj.dialogue || '...'}</div>
+                <div class="participant-card-header">
+                    <div>
+                        <h4>${obj.emoji} ${obj.name}</h4>
+                        <p class="class-name">${obj.class}</p>
+                    </div>
+                    <button class="remove-participant-btn" title="Remove from participant list">×</button>
+                </div>
+                <div class="dialogue">${obj.dialogue ? `"${obj.dialogue}"` : '...'}</div>
             `;
+            
+            // Make remove button clickable
+            const removeBtn = card.querySelector('.remove-participant-btn');
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent any parent click handlers
+                obj.inParticipantList = false;
+                this.updateObjectsDisplay();
+                this.drawOverlays(); // Redraw to show overlay again
+                console.log(`Removed ${obj.name} from participant list`);
+            });
+            
             display.appendChild(card);
         }
     }
@@ -817,6 +1110,12 @@ class TalkingObjectsApp {
     
     isClassAllowed(className) {
         const normalized = className.toLowerCase().replace(/\s+/g, '_');
+        
+        // Always exclude persons - focus on inanimate objects only
+        if (normalized === 'person') {
+            return false;
+        }
+        
         if (this.allowedClasses.has(normalized)) return true;
         
         const isKnown = this.knownClasses.includes(normalized);
@@ -827,6 +1126,9 @@ class TalkingObjectsApp {
     
     removeDisallowedObjects() {
         for (const [id, obj] of this.objects) {
+            // Don't remove objects that are in the participant list
+            if (obj.inParticipantList) continue;
+            
             if (!this.isClassAllowed(obj.class)) {
                 if (obj.speechBubble) {
                     obj.speechBubble.remove();
@@ -1018,6 +1320,505 @@ class TalkingObjectsApp {
         if (this.hoverControl) {
             this.hoverControl.style.display = 'none';
         }
+    }
+    
+    setupEmojiButtonClicks() {
+        // Make overlay clickable
+        this.overlay.style.cursor = 'pointer';
+        this.overlay.addEventListener('click', (e) => {
+            if (!this.isRunning) return;
+            
+            const rect = this.overlay.getBoundingClientRect();
+            const scaleX = this.overlay.width / rect.width;
+            const scaleY = this.overlay.height / rect.height;
+            
+            // Account for video being flipped (scaleX(-1))
+            const clickX = (rect.width - (e.clientX - rect.left)) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+            
+            // Find which object was clicked (only check objects not in participant list)
+            for (const obj of this.objects.values()) {
+                // Skip objects already in participant list (they can't be added again)
+                if (obj.inParticipantList) continue;
+                
+                const faceSize = Math.min(obj.width, obj.height, 80);
+                const radius = faceSize / 2 + 5;
+                const dx = clickX - obj.centerX;
+                const dy = clickY - obj.centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= radius) {
+                    // Add to participant list
+                    obj.inParticipantList = true;
+                    this.updateObjectsDisplay();
+                    this.drawOverlays(); // Redraw to hide overlay
+                    
+                    console.log(`Added ${obj.name} to participant list`);
+                    break;
+                }
+            }
+        });
+    }
+    
+    generateResponseToDialogue(obj, previousDialogue, otherObj) {
+        // Analyze the previous dialogue and generate a contextual response
+        const dialogueLower = previousDialogue.toLowerCase();
+        const objName = otherObj.name;
+        const objType = otherObj.className;
+        
+        // Extract keywords and themes from the previous dialogue
+        const keywords = {
+            // Technology keywords
+            tech: ['computer', 'laptop', 'phone', 'device', 'wireless', 'network', 'connect', 'signal', 'battery', 'power', 'update', 'process', 'data', 'digital'],
+            // Comfort/furniture keywords
+            comfort: ['comfort', 'comfy', 'sit', 'seat', 'relax', 'cushion', 'support', 'lounge', 'rest'],
+            // Food/drink keywords
+            food: ['drink', 'coffee', 'tea', 'water', 'liquid', 'fill', 'empty', 'cup', 'bottle', 'thirsty', 'cheers'],
+            // Knowledge/reading keywords
+            knowledge: ['book', 'read', 'story', 'page', 'chapter', 'knowledge', 'wisdom', 'words', 'learn'],
+            // Sports/play keywords
+            sports: ['play', 'game', 'ball', 'sport', 'catch', 'throw', 'bounce', 'fun', 'outdoor'],
+            // Travel keywords
+            travel: ['travel', 'journey', 'trip', 'pack', 'bag', 'suitcase', 'adventure', 'place'],
+            // Questions
+            question: ['?', 'wonder', 'what', 'why', 'how', 'when', 'where', 'who'],
+            // Agreement
+            agreement: ['agree', 'yes', 'right', 'true', 'correct', 'exactly', 'totally'],
+            // Excitement
+            excitement: ['!', 'amazing', 'awesome', 'great', 'love', 'excited', 'wow']
+        };
+        
+        // Detect what the previous dialogue is about
+        const detectedThemes = [];
+        for (const [theme, words] of Object.entries(keywords)) {
+            if (words.some(word => dialogueLower.includes(word))) {
+                detectedThemes.push(theme);
+            }
+        }
+        
+        // Generate contextual responses based on detected themes and object types
+        const responses = [];
+        
+        // Technology-related responses
+        if (detectedThemes.includes('tech')) {
+            if (objType === 'laptop' || objType === 'phone') {
+                responses.push(
+                    `${objName}, I totally get that!`,
+                    `That's so relatable, ${objName}!`,
+                    `${objName}, we tech devices understand each other!`,
+                    `I know exactly what you mean, ${objName}!`
+                );
+            } else if (objType === 'book') {
+                responses.push(
+                    `Interesting perspective, ${objName}!`,
+                    `${objName}, that's a different way to think about it!`,
+                    `I see, ${objName}. Technology is fascinating!`
+                );
+            } else {
+                responses.push(
+                    `That sounds complicated, ${objName}!`,
+                    `${objName}, I'm not as tech-savvy as you!`,
+                    `Wow ${objName}, that's impressive!`
+                );
+            }
+        }
+        
+        // Comfort-related responses
+        if (detectedThemes.includes('comfort')) {
+            if (objType === 'chair' || objType === 'couch') {
+                responses.push(
+                    `Exactly, ${objName}! Comfort is everything!`,
+                    `${objName}, you understand me perfectly!`,
+                    `That's what I'm here for, ${objName}!`
+                );
+            } else {
+                responses.push(
+                    `${objName}, I wish I could experience that comfort!`,
+                    `That sounds nice, ${objName}!`,
+                    `${objName}, you're lucky to be so comfy!`
+                );
+            }
+        }
+        
+        // Food/drink-related responses
+        if (detectedThemes.includes('food')) {
+            if (objType === 'cup' || objType === 'bottle') {
+                responses.push(
+                    `${objName}, I know exactly what you mean!`,
+                    `That's my specialty too, ${objName}!`,
+                    `${objName}, we containers stick together!`
+                );
+            } else {
+                responses.push(
+                    `${objName}, that sounds refreshing!`,
+                    `I could use some of that, ${objName}!`,
+                    `${objName}, you make me thirsty!`
+                );
+            }
+        }
+        
+        // Knowledge-related responses
+        if (detectedThemes.includes('knowledge')) {
+            if (objType === 'book') {
+                responses.push(
+                    `${objName}, knowledge is indeed power!`,
+                    `Well said, ${objName}!`,
+                    `${objName}, you speak the truth!`
+                );
+            } else if (objType === 'laptop') {
+                responses.push(
+                    `${objName}, I store knowledge digitally!`,
+                    `We're both information keepers, ${objName}!`,
+                    `${objName}, digital vs analog!`
+                );
+            } else {
+                responses.push(
+                    `${objName}, that's very wise!`,
+                    `I'm learning from you, ${objName}!`,
+                    `${objName}, you're so knowledgeable!`
+                );
+            }
+        }
+        
+        // Question responses
+        if (detectedThemes.includes('question')) {
+            responses.push(
+                `That's a great question, ${objName}!`,
+                `Hmm, ${objName}, let me think about that...`,
+                `${objName}, I wonder about that too!`,
+                `Good point, ${objName}!`,
+                `${objName}, that's something to consider!`
+            );
+        }
+        
+        // Agreement responses
+        if (detectedThemes.includes('agreement')) {
+            responses.push(
+                `I completely agree, ${objName}!`,
+                `${objName}, you're absolutely right!`,
+                `Couldn't have said it better, ${objName}!`,
+                `${objName}, that's exactly how I feel!`
+            );
+        }
+        
+        // Excitement responses
+        if (detectedThemes.includes('excitement')) {
+            responses.push(
+                `${objName}, I'm excited too!`,
+                `That's awesome, ${objName}!`,
+                `${objName}, your enthusiasm is contagious!`,
+                `I love your energy, ${objName}!`
+            );
+        }
+        
+        // Generic contextual responses if we detected themes but no specific match
+        if (responses.length === 0 && detectedThemes.length > 0) {
+            responses.push(
+                `That's interesting, ${objName}!`,
+                `${objName}, I see what you mean!`,
+                `I understand, ${objName}!`,
+                `${objName}, that makes sense!`,
+                `You're right about that, ${objName}!`
+            );
+        }
+        
+        // If no themes detected, try to reference something from the dialogue
+        if (responses.length === 0) {
+            // Extract any capitalized words (likely names or important terms)
+            const words = previousDialogue.split(' ');
+            const importantWords = words.filter(w => w.length > 3 && /[A-Z]/.test(w));
+            
+            if (importantWords.length > 0) {
+                responses.push(
+                    `${objName}, you mentioned something interesting!`,
+                    `That's a good point, ${objName}!`,
+                    `I hear you, ${objName}!`,
+                    `${objName}, tell me more!`
+                );
+            } else {
+                // Last resort: acknowledge the statement
+                responses.push(
+                    `I see, ${objName}!`,
+                    `That's true, ${objName}!`,
+                    `${objName}, I understand!`,
+                    `Right, ${objName}!`
+                );
+            }
+        }
+        
+        // Return a random response from the generated list
+        if (responses.length > 0) {
+            return responses[Math.floor(Math.random() * responses.length)];
+        }
+        
+        return null; // No contextual response found
+    }
+    
+    getContextDialogue(obj, otherObj, dialogueType) {
+        // Generate context-aware dialogue based on object types
+        const objType = obj.className;
+        const otherType = otherObj.className;
+        const objName = obj.name;
+        const otherName = otherObj.name;
+        
+        // Context-specific conversations
+        if (dialogueType === 'conversations') {
+            const contextMap = {
+                // Technology talking to technology
+                'laptop_phone': [`Hey ${otherName}, want to sync up?`, `${otherName}, we should share some data!`, `Wireless connection with ${otherName}? Yes please!`],
+                'phone_laptop': [`${otherName}, can you process this for me?`, `Hey ${otherName}, I've got some files to share!`, `${otherName}, let's network!`],
+                
+                // Technology talking to furniture
+                'laptop_chair': [`${otherName}, you're my favorite seat!`, `Thanks for supporting me, ${otherName}!`, `${otherName}, you're so comfortable!`],
+                'phone_couch': [`${otherName}, perfect spot for scrolling!`, `I love lounging on ${otherName}!`, `${otherName} is where I belong!`],
+                
+                // Furniture talking to furniture
+                'chair_couch': [`${otherName}, you're the comfier one!`, `We're both here to support, ${otherName}!`, `${otherName}, let's be furniture friends!`],
+                'couch_chair': [`${otherName}, you're more portable than me!`, `We're both seats, ${otherName}!`, `${otherName}, comfort is our game!`],
+                
+                // Containers talking to each other
+                'cup_bottle': [`${otherName}, what are you holding?`, `We're both containers, ${otherName}!`, `${otherName}, liquid buddies!`],
+                'bottle_cup': [`${otherName}, want to share some liquid?`, `We contain things, ${otherName}!`, `${otherName}, we're both pour-able!`],
+                
+                // Books talking to technology
+                'book_laptop': [`${otherName}, you store digital stories!`, `${otherName}, I'm the old-school version!`, `We both hold information, ${otherName}!`],
+                'laptop_book': [`${otherName}, you're the original storage!`, `I'm like you but digital, ${otherName}!`, `${otherName}, we're both knowledge keepers!`],
+                
+                // Sports equipment
+                'frisbee_sports_ball': [`${otherName}, we're both round and fun!`, `Let's play together, ${otherName}!`, `${otherName}, outdoor sports unite!`],
+                'sports_ball_frisbee': [`${otherName}, catch me if you can!`, `We're both bouncy, ${otherName}!`, `${otherName}, game time!`],
+                
+                // Travel items
+                'backpack_suitcase': [`${otherName}, you're the bigger traveler!`, `We both carry things, ${otherName}!`, `${otherName}, adventure buddies!`],
+                'suitcase_backpack': [`${otherName}, you're more portable!`, `We're both travelers, ${otherName}!`, `${otherName}, journey companions!`]
+            };
+            
+            const key1 = `${objType}_${otherType}`;
+            const key2 = `${otherType}_${objType}`;
+            
+            if (contextMap[key1]) {
+                return contextMap[key1][Math.floor(Math.random() * contextMap[key1].length)];
+            }
+            if (contextMap[key2]) {
+                return contextMap[key2][Math.floor(Math.random() * contextMap[key2].length)];
+            }
+            
+            // Generic context-aware dialogue
+            const genericContext = [
+                `Hey ${otherName}, nice to meet you!`,
+                `${otherName}, we're in this together!`,
+                `What's up, ${otherName}?`,
+                `${otherName}, you seem interesting!`,
+                `I see you, ${otherName}!`
+            ];
+            
+            if (Math.random() < 0.3) { // 30% chance for generic context
+                return genericContext[Math.floor(Math.random() * genericContext.length)];
+            }
+        } else if (dialogueType === 'responses') {
+            // Context-aware responses
+            const responseMap = {
+                'laptop_phone': [`That's a great idea, ${otherName}!`, `${otherName}, I'm processing that thought!`, `Agreed, ${otherName}!`],
+                'phone_laptop': [`Copy that, ${otherName}!`, `${otherName}, I'm on it!`, `Got it, ${otherName}!`],
+                'book_laptop': [`Well said, ${otherName}!`, `${otherName}, that's profound!`, `Eloquent, ${otherName}!`],
+                'cup_bottle': [`Cheers to that, ${otherName}!`, `${otherName}, I'll drink to that!`, `Here here, ${otherName}!`]
+            };
+            
+            const key1 = `${objType}_${otherType}`;
+            const key2 = `${otherType}_${objType}`;
+            
+            if (responseMap[key1]) {
+                return responseMap[key1][Math.floor(Math.random() * responseMap[key1].length)];
+            }
+            if (responseMap[key2]) {
+                return responseMap[key2][Math.floor(Math.random() * responseMap[key2].length)];
+            }
+            
+            // Generic context-aware responses
+            const genericResponses = [
+                `I hear you, ${otherName}!`,
+                `${otherName}, that makes sense!`,
+                `Right on, ${otherName}!`,
+                `${otherName}, I'm with you!`,
+                `Totally, ${otherName}!`
+            ];
+            
+            if (Math.random() < 0.3) { // 30% chance for generic context
+                return genericResponses[Math.floor(Math.random() * genericResponses.length)];
+            }
+        }
+        
+        return null; // No context dialogue found, use default
+    }
+    
+    getEmojiForClass(className) {
+        // Map common object classes to appropriate emojis
+        const emojiMap = {
+            // Furniture
+            'dining_table': '🪑',
+            'bed': '🛏️',
+            'toilet': '🚽',
+            
+            // Electronics
+            'tv': '📺',
+            'remote': '📱',
+            'microwave': '📻',
+            'oven': '🔥',
+            'toaster': '🍞',
+            'refrigerator': '❄️',
+            
+            // Kitchen items
+            'sink': '🚿',
+            'bowl': '🥣',
+            'fork': '🍴',
+            'knife': '🔪',
+            'spoon': '🥄',
+            
+            // Food
+            'banana': '🍌',
+            'apple': '🍎',
+            'sandwich': '🥪',
+            'pizza': '🍕',
+            'donut': '🍩',
+            'cake': '🎂',
+            'hot_dog': '🌭',
+            'hamburger': '🍔',
+            'orange': '🍊',
+            'broccoli': '🥦',
+            'carrot': '🥕',
+            
+            // Vehicles
+            'car': '🚗',
+            'motorcycle': '🏍️',
+            'bus': '🚌',
+            'truck': '🚚',
+            'train': '🚂',
+            'airplane': '✈️',
+            'bicycle': '🚲',
+            'boat': '⛵',
+            
+            // Sports equipment
+            'baseball_glove': '⚾',
+            'skis': '⛷️',
+            'snowboard': '🏂',
+            
+            // Other common objects
+            'clock': '🕐',
+            'vase': '🏺',
+            'scissors': '✂️',
+            'teddy_bear': '🧸',
+            'hair_drier': '💨',
+            'toothbrush': '🪥',
+            'wine_glass': '🍷',
+            'potted_plant': '🪴',
+            'fire_hydrant': '🚒',
+            'stop_sign': '🛑',
+            'parking_meter': '🅿️',
+            'bench': '🪑',
+            'traffic_light': '🚦'
+        };
+        
+        // Try exact match first
+        if (emojiMap[className]) {
+            return emojiMap[className];
+        }
+        
+        // Try partial matches for variations
+        const normalized = className.toLowerCase();
+        for (const [key, emoji] of Object.entries(emojiMap)) {
+            if (normalized.includes(key) || key.includes(normalized)) {
+                return emoji;
+            }
+        }
+        
+        // Default fallback - use a more varied set of generic emojis
+        const genericEmojis = ['📦', '🔷', '🔶', '💎', '⭐', '✨', '🔮', '🎯', '🎲', '🧩'];
+        return genericEmojis[Math.floor(Math.random() * genericEmojis.length)];
+    }
+    
+    generateObjectName(className) {
+        // Pun-based names for each object type
+        const punNames = {
+            'laptop': ['Lappy', 'Compu-Terry', 'Mac-Beth', 'Dell-bert', 'ThinkPad-rick', 'Chromebook-ie', 'Surface-ace'],
+            'phone': ['Phoney', 'Cell-ebrity', 'iPhone-ia', 'Android-rew', 'Samsung-uel', 'Pixel-ine', 'Call-ie'],
+            'book': ['Book-ie', 'Novel-ette', 'Page-rick', 'Chapter-ine', 'Story-ella', 'Read-rick', 'Tome-y'],
+            'cup': ['Cuppy', 'Mug-gy', 'Tea-cup-ie', 'Java-ck', 'Espresso-ella', 'Latte-isha', 'Brew-ie'],
+            'bottle': ['Bottley', 'Aqua-rius', 'H2O-llie', 'Plastic-ky', 'Glass-ie', 'Cap-tain', 'Pour-rick'],
+            'chair': ['Chair-ie', 'Seat-rick', 'Stool-ie', 'Bench-ley', 'Throne-y', 'Recliner-ella', 'Cushion-ette'],
+            'couch': ['Couch-y', 'Sofa-ia', 'Lounger-ella', 'Divan-ielle', 'Settee-rick', 'Chesterfield-ie', 'Sofa-king-cool'],
+            'keyboard': ['Keys-y', 'Type-rick', 'QWERTY-ella', 'Click-y', 'Tap-ie', 'Key-ron', 'Board-ie'],
+            'mouse': ['Mouse-y', 'Click-ie', 'Scroll-ie', 'Pointer-ella', 'Cursor-ick', 'Track-y', 'Rodent-rick'],
+            'backpack': ['Pack-ie', 'Bag-rick', 'Rucksack-ie', 'Knapsack-ella', 'Carry-ie', 'Load-y', 'Travel-ella'],
+            'umbrella': ['Brell-ie', 'Rain-y', 'Para-sol-ie', 'Shade-rick', 'Cover-ella', 'Protect-ie', 'Shelter-ella'],
+            'handbag': ['Bag-ie', 'Purse-ella', 'Tote-ie', 'Clutch-ie', 'Satchel-ella', 'Carry-ie', 'Fashion-ella'],
+            'tie': ['Tie-dye', 'Neck-tie-rick', 'Knot-ie', 'Windsor-ella', 'Bow-ie', 'Formal-ie', 'Corporate-rick'],
+            'suitcase': ['Case-y', 'Luggage-ella', 'Trunk-ie', 'Valise-rick', 'Portmanteau-ie', 'Travel-ella', 'Journey-ie'],
+            'frisbee': ['Frisbee-ie', 'Disc-ie', 'Fly-rick', 'Catch-ie', 'Toss-ella', 'Spin-ie', 'Glide-rick'],
+            'sports_ball': ['Ball-ie', 'Sphere-rick', 'Bounce-ie', 'Round-ella', 'Game-ie', 'Play-rick', 'Sport-y'],
+            'kite': ['Kite-y', 'Fly-ie', 'Wind-rick', 'Sky-ella', 'Soar-ie', 'Glide-rick', 'Float-ella'],
+            'baseball_bat': ['Bat-ie', 'Swing-rick', 'Hit-ie', 'Wood-ella', 'Strike-ie', 'Home-run-rick', 'Pitch-ie'],
+            'skateboard': ['Skate-ie', 'Board-rick', 'Roll-ie', 'Trick-ella', 'Grind-ie', 'Ollie-rick', 'Rad-ie'],
+            'surfboard': ['Surf-ie', 'Wave-rick', 'Ride-ella', 'Shred-ie', 'Gnarly-rick', 'Beach-ie', 'Hang-ten-ella'],
+            'tennis_racket': ['Racket-ie', 'Swing-rick', 'Serve-ella', 'Match-ie', 'Court-rick', 'Net-ie', 'Ace-ella'],
+            // Additional common objects
+            'tv': ['TV-ie', 'Screen-ie', 'Tube-rick', 'Box-ella', 'Show-ie', 'Channel-rick', 'Remote-ella'],
+            'remote': ['Remote-ie', 'Click-rick', 'Control-ella', 'Button-ie', 'Zapper-rick', 'Clicker-ella'],
+            'microwave': ['Micro-ie', 'Wave-rick', 'Nuke-ella', 'Heat-ie', 'Cook-rick', 'Zap-ella'],
+            'oven': ['Oven-ie', 'Bake-rick', 'Roast-ella', 'Heat-ie', 'Cook-rick', 'Warm-ella'],
+            'toaster': ['Toast-ie', 'Pop-rick', 'Brown-ella', 'Crisp-ie', 'Warm-rick', 'Heat-ella'],
+            'sink': ['Sink-ie', 'Drain-rick', 'Wash-ella', 'Flow-ie', 'Tap-rick', 'Water-ella'],
+            'refrigerator': ['Fridge-ie', 'Cool-rick', 'Chill-ella', 'Cold-ie', 'Ice-rick', 'Freeze-ella'],
+            'bed': ['Bed-ie', 'Sleep-rick', 'Rest-ella', 'Pillow-ie', 'Dream-rick', 'Snore-ella'],
+            'dining_table': ['Table-ie', 'Dine-rick', 'Eat-ella', 'Feast-ie', 'Surface-rick', 'Top-ella'],
+            'toilet': ['Loo-ie', 'Flush-rick', 'Throne-ella', 'Seat-ie', 'Bowl-rick', 'Porcelain-ella'],
+            'bowl': ['Bowl-ie', 'Dish-rick', 'Serve-ella', 'Mix-ie', 'Hold-rick', 'Container-ella'],
+            'banana': ['Nana-ie', 'Peel-rick', 'Yellow-ella', 'Fruit-ie', 'Bunch-rick', 'Monkey-ella'],
+            'apple': ['Apple-ie', 'Core-rick', 'Red-ella', 'Fruit-ie', 'Tree-rick', 'Crisp-ella'],
+            'sandwich': ['Sandwich-ie', 'Bread-rick', 'Lunch-ella', 'Stack-ie', 'Layer-rick', 'Fill-ella'],
+            'car': ['Car-ie', 'Drive-rick', 'Wheel-ella', 'Auto-ie', 'Vroom-rick', 'Road-ella'],
+            'motorcycle': ['Bike-ie', 'Rev-rick', 'Ride-ella', 'Zoom-ie', 'Speed-rick', 'Cycle-ella'],
+            'bus': ['Bus-ie', 'Route-rick', 'Ride-ella', 'Transit-ie', 'Public-rick', 'Commute-ella'],
+            'truck': ['Truck-ie', 'Haul-rick', 'Load-ella', 'Big-ie', 'Cargo-rick', 'Freight-ella'],
+            'bicycle': ['Bike-ie', 'Pedal-rick', 'Cycle-ella', 'Wheel-ie', 'Ride-rick', 'Spin-ella']
+        };
+        
+        // Get pun names for this class
+        let names = punNames[className];
+        
+        // If no specific pun names, generate one from the class name
+        if (!names) {
+            const formatted = className.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+            const base = formatted.split(' ')[0].toLowerCase();
+            const suffixes = ['-ie', '-rick', '-ella', '-ie', '-rick', '-ella'];
+            names = [
+                `${base}${suffixes[0]}`,
+                `${base}${suffixes[1]}`,
+                `${base}${suffixes[2]}`,
+                `${formatted}-ie`,
+                `${formatted}-rick`,
+                `${formatted}-ella`
+            ];
+        }
+        
+        // Return a random name from the list
+        return names[Math.floor(Math.random() * names.length)];
+    }
+    
+    calculateOverlap(bbox1, bbox2) {
+        // Calculate Intersection over Union (IoU) for bounding boxes
+        const x1 = Math.max(bbox1[0], bbox2.x);
+        const y1 = Math.max(bbox1[1], bbox2.y);
+        const x2 = Math.min(bbox1[0] + bbox1[2], bbox2.x + bbox2.width);
+        const y2 = Math.min(bbox1[1] + bbox1[3], bbox2.y + bbox2.height);
+        
+        if (x2 <= x1 || y2 <= y1) return 0; // No overlap
+        
+        const intersection = (x2 - x1) * (y2 - y1);
+        const area1 = bbox1[2] * bbox1[3];
+        const area2 = bbox2.width * bbox2.height;
+        const union = area1 + area2 - intersection;
+        
+        return union > 0 ? intersection / union : 0;
     }
 }
 

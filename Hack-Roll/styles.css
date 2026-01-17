@@ -178,6 +178,17 @@ body {
     background: #4d4d4d;
 }
 
+.participant-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.participant-card-header > div {
+    flex: 1;
+}
+
 .participant-card h4 {
     font-size: 13px;
     font-weight: 600;
@@ -190,7 +201,35 @@ body {
 .participant-card .class-name {
     font-size: 11px;
     color: #8e8e8e;
-    margin-bottom: 8px;
+    margin-bottom: 0;
+}
+
+.remove-participant-btn {
+    background: #e53e3e;
+    border: none;
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    line-height: 1;
+    padding: 0;
+}
+
+.remove-participant-btn:hover {
+    background: #f56565;
+    transform: scale(1.1);
+}
+
+.remove-participant-btn:active {
+    transform: scale(0.95);
 }
 
 .participant-card .dialogue {
@@ -454,6 +493,80 @@ body {
     border-left: 10px solid transparent;
     border-right: 10px solid transparent;
     border-top: 10px solid rgba(255, 255, 255, 0.95);
+}
+
+/* Thought bubbles */
+.thought-bubble {
+    position: fixed;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    pointer-events: none;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    animation: fadeIn 0.3s;
+}
+
+.thought-bubble::before {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.thought-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -16px;
+    left: 50%;
+    transform: translateX(-30%);
+    width: 8px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.thought-dot {
+    width: 6px;
+    height: 6px;
+    background: #666;
+    border-radius: 50%;
+    animation: thoughtPulse 1.2s ease-in-out infinite;
+}
+
+.thought-dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.thought-dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.thought-dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes thoughtPulse {
+    0%, 100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
 }
 
 .object-control {
