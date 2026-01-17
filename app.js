@@ -189,14 +189,31 @@ class TalkingObjectsApp {
     }
     
     async init() {
+        // Camera controls
         document.getElementById('startBtn').addEventListener('click', () => this.startCamera());
         document.getElementById('stopBtn').addEventListener('click', () => this.stopCamera());
+        
+        // Settings panel
+        document.getElementById('settingsBtn').addEventListener('click', () => {
+            document.getElementById('settingsPanel').classList.toggle('active');
+        });
+        document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+            document.getElementById('settingsPanel').classList.remove('active');
+        });
+        
+        // Settings controls
         this.setupObjectFilters();
         document.getElementById('threshold').addEventListener('input', (e) => {
             document.getElementById('threshValue').textContent = e.target.value + '%';
             this.threshold = parseFloat(e.target.value) / 100;
         });
         this.threshold = 0.5;
+        
+        // End call button
+        document.getElementById('endCallBtn').addEventListener('click', () => {
+            this.stopCamera();
+            document.getElementById('settingsPanel').classList.remove('active');
+        });
         
         // Wait for TensorFlow.js to be available, then load model
         await this.waitForTensorFlow();
@@ -237,9 +254,8 @@ class TalkingObjectsApp {
             this.model = await cocoSsd.load();
             console.log('Model loaded successfully!');
             
-            if (statusEl) statusEl.textContent = '✓ Model ready! Click "Start Camera" to begin.';
+            if (statusEl) statusEl.textContent = '✓ Model ready';
             if (statusEl) statusEl.style.color = '#4ade80';
-            document.getElementById('startBtn').textContent = 'Start Camera';
             document.getElementById('startBtn').disabled = false;
         } catch (error) {
             console.error('Error loading model:', error);
@@ -633,14 +649,18 @@ class TalkingObjectsApp {
     
     updateObjectsDisplay() {
         const display = document.getElementById('objectsDisplay');
+        const countBadge = document.getElementById('participantCount');
         display.innerHTML = '';
         
-        for (const obj of this.objects.values()) {
+        const objectArray = Array.from(this.objects.values());
+        countBadge.textContent = objectArray.length;
+        
+        for (const obj of objectArray) {
             const card = document.createElement('div');
-            card.className = 'plant-card';
+            card.className = 'participant-card';
             card.innerHTML = `
                 <h4>${obj.emoji} ${obj.name}</h4>
-                <p><small>${obj.class}</small></p>
+                <p class="class-name">${obj.class}</p>
                 <div class="dialogue">${obj.dialogue || '...'}</div>
             `;
             display.appendChild(card);
@@ -665,13 +685,18 @@ class TalkingObjectsApp {
         filtersContainer.innerHTML = '';
         
         entries.forEach(entry => {
-            const label = document.createElement('label');
-            label.className = 'filter-option';
+            const filterItem = document.createElement('div');
+            filterItem.className = 'filter-item';
             
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.value = entry.key;
             checkbox.checked = true; // default to old behavior (all on)
+            checkbox.id = `filter-${entry.key}`;
+            
+            const label = document.createElement('label');
+            label.htmlFor = `filter-${entry.key}`;
+            label.textContent = `${entry.emoji} ${entry.label}`;
             
             checkbox.addEventListener('change', () => {
                 if (entry.key === 'other') {
@@ -686,11 +711,9 @@ class TalkingObjectsApp {
                 this.allowedClasses.add(entry.key);
             }
             
-            label.appendChild(checkbox);
-            const text = document.createElement('span');
-            text.textContent = `${entry.emoji} ${entry.label}`;
-            label.appendChild(text);
-            filtersContainer.appendChild(label);
+            filterItem.appendChild(checkbox);
+            filterItem.appendChild(label);
+            filtersContainer.appendChild(filterItem);
         });
         
         selectAllBtn.addEventListener('click', () => {

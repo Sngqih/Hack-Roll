@@ -7,50 +7,104 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🗣️ Talking Objects 🤖</h1>
-            <p>Point your camera at objects and discover their personalities!</p>
-            <div id="loadingStatus" style="margin-top: 10px; font-size: 0.9rem; opacity: 0.8;">
-                Loading AI model... Please wait.
+    <div class="zoom-container">
+        <!-- Top bar (like Zoom header) -->
+        <div class="zoom-topbar">
+            <div class="zoom-title">
+                <h2>🗣️ Talking Objects</h2>
+                <div id="loadingStatus" class="status-indicator">Loading AI model...</div>
             </div>
-        </header>
-
-        <div class="camera-section">
-            <video id="video" autoplay playsinline></video>
-            <canvas id="canvas"></canvas>
-            <canvas id="overlay"></canvas>
+            <div class="zoom-controls-top">
+                <button class="zoom-icon-btn" id="minimizeBtn" title="Minimize">−</button>
+                <button class="zoom-icon-btn" id="maximizeBtn" title="Maximize">□</button>
+                <button class="zoom-icon-btn" id="closeBtn" title="Close">×</button>
+            </div>
         </div>
 
-        <div class="controls">
-            <button id="startBtn" class="btn btn-primary">Start Camera</button>
-            <button id="stopBtn" class="btn btn-secondary" disabled>Stop Camera</button>
-            <div class="settings">
-                <label>
-                    <input type="checkbox" id="autoTalk" checked>
-                    Auto-talk mode
-                </label>
-                <label>
-                    Detection Threshold: <input type="range" id="threshold" min="10" max="100" value="50">
-                    <span id="threshValue">50%</span>
-                </label>
+        <!-- Main video area -->
+        <div class="zoom-main">
+            <div class="video-container">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+                <canvas id="overlay"></canvas>
+                <div class="video-label">Camera Feed</div>
             </div>
-            <div class="filter-section">
-                <div class="filter-header">
-                    <h3>Choose who can talk</h3>
+
+            <!-- Participants sidebar (right side) -->
+            <div class="zoom-sidebar">
+                <div class="sidebar-header">
+                    <h3>Participants</h3>
+                    <span id="participantCount" class="count-badge">0</span>
+                </div>
+                <div id="objectsDisplay" class="participants-list"></div>
+            </div>
+        </div>
+
+        <!-- Bottom control bar (Zoom-style) -->
+        <div class="zoom-controlbar">
+            <div class="controlbar-left">
+                <button class="zoom-control-btn" id="startBtn">
+                    <span class="icon">📹</span>
+                    <span>Start Video</span>
+                </button>
+                <button class="zoom-control-btn" id="stopBtn" disabled>
+                    <span class="icon">⏹️</span>
+                    <span>Stop Video</span>
+                </button>
+            </div>
+
+            <div class="controlbar-center">
+                <button class="zoom-control-btn mic-btn" id="muteBtn">
+                    <span class="icon">🎤</span>
+                    <span>Mute</span>
+                </button>
+                <button class="zoom-control-btn video-btn active" id="videoToggleBtn">
+                    <span class="icon">📹</span>
+                    <span>Video</span>
+                </button>
+                <button class="zoom-control-btn settings-btn" id="settingsBtn">
+                    <span class="icon">⚙️</span>
+                    <span>Settings</span>
+                </button>
+            </div>
+
+            <div class="controlbar-right">
+                <button class="zoom-control-btn end-btn" id="endCallBtn">
+                    <span>End</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Settings panel (hidden by default) -->
+        <div class="settings-panel" id="settingsPanel">
+            <div class="settings-header">
+                <h3>Settings</h3>
+                <button class="close-settings" id="closeSettingsBtn">×</button>
+            </div>
+            <div class="settings-content">
+                <div class="setting-item">
+                    <label>
+                        <input type="checkbox" id="autoTalk" checked>
+                        Auto-talk mode
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <label>
+                        Detection Threshold: 
+                        <input type="range" id="threshold" min="10" max="100" value="50">
+                        <span id="threshValue">50%</span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <h4>Object Filters</h4>
                     <div class="filter-actions">
                         <button id="selectAllObjects" class="pill-btn" type="button">Select all</button>
                         <button id="clearAllObjects" class="pill-btn ghost" type="button">Clear</button>
                     </div>
+                    <div id="objectFilters" class="filter-list"></div>
+                    <p class="hint">Only checked object types will appear and speak.</p>
                 </div>
-                <div id="objectFilters" class="filter-list"></div>
-                <p class="hint">Only the checked object types will appear and speak.</p>
             </div>
-        </div>
-
-        <div class="plants-container" id="objectsList">
-            <h3>Detected Objects:</h3>
-            <div id="objectsDisplay"></div>
         </div>
     </div>
 
