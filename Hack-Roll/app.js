@@ -193,13 +193,50 @@ class TalkingObjectsApp {
     }
     
     async init() {
-        document.getElementById('startBtn').addEventListener('click', () => this.startCamera());
-        document.getElementById('stopBtn').addEventListener('click', () => this.stopCamera());
+        // Video toggle button (merged Start/Stop functionality)
+        const videoToggleBtn = document.getElementById('videoToggleBtn');
+        if (videoToggleBtn) {
+            videoToggleBtn.addEventListener('click', () => {
+                if (this.isRunning) {
+                    this.stopCamera();
+                } else {
+                    this.startCamera();
+                }
+            });
+        }
+        
+        // Settings panel
+        const settingsBtn = document.getElementById('settingsBtn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                document.getElementById('settingsPanel').classList.toggle('active');
+            });
+        }
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        if (closeSettingsBtn) {
+            closeSettingsBtn.addEventListener('click', () => {
+                document.getElementById('settingsPanel').classList.remove('active');
+            });
+        }
+        
+        // End call button
+        const endCallBtn = document.getElementById('endCallBtn');
+        if (endCallBtn) {
+            endCallBtn.addEventListener('click', () => {
+                this.stopCamera();
+                document.getElementById('settingsPanel').classList.remove('active');
+            });
+        }
+        
+        // Settings controls
         this.setupObjectFilters();
-        document.getElementById('threshold').addEventListener('input', (e) => {
-            document.getElementById('threshValue').textContent = e.target.value + '%';
-            this.threshold = parseFloat(e.target.value) / 100;
-        });
+        const thresholdInput = document.getElementById('threshold');
+        if (thresholdInput) {
+            thresholdInput.addEventListener('input', (e) => {
+                document.getElementById('threshValue').textContent = e.target.value + '%';
+                this.threshold = parseFloat(e.target.value) / 100;
+            });
+        }
         this.threshold = 0.5;
         this.setupHoverControls();
         
@@ -242,10 +279,9 @@ class TalkingObjectsApp {
             this.model = await cocoSsd.load();
             console.log('Model loaded successfully!');
             
-            if (statusEl) statusEl.textContent = '✓ Model ready! Click "Start Camera" to begin.';
+            if (statusEl) statusEl.textContent = '✓ Model ready';
             if (statusEl) statusEl.style.color = '#4ade80';
-            document.getElementById('startBtn').textContent = 'Start Camera';
-            document.getElementById('startBtn').disabled = false;
+            // Video button is ready to use
         } catch (error) {
             console.error('Error loading model:', error);
             const errorMsg = error.message || 'Could not load object detection model.';
@@ -256,8 +292,11 @@ class TalkingObjectsApp {
             }
             
             alert(`${errorMsg}\n\nTroubleshooting:\n1. Check your internet connection\n2. The model needs to download (~30MB)\n3. Try refreshing the page\n4. Check browser console for details`);
-            document.getElementById('startBtn').textContent = 'Start Camera (Model Failed)';
-            document.getElementById('startBtn').disabled = true;
+            const videoToggleBtn = document.getElementById('videoToggleBtn');
+            if (videoToggleBtn) {
+                videoToggleBtn.querySelector('span:last-child').textContent = 'Model Failed';
+                videoToggleBtn.disabled = true;
+            }
         }
     }
     
@@ -282,8 +321,12 @@ class TalkingObjectsApp {
                 this.processVideo();
             });
             
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('stopBtn').disabled = false;
+            // Update video toggle button state
+            const videoToggleBtn = document.getElementById('videoToggleBtn');
+            if (videoToggleBtn) {
+                videoToggleBtn.classList.add('active');
+                videoToggleBtn.querySelector('span:last-child').textContent = 'Stop Video';
+            }
             this.isRunning = true;
         } catch (error) {
             console.error('Error accessing camera:', error);
@@ -306,8 +349,12 @@ class TalkingObjectsApp {
         this.updateObjectsDisplay();
         this.clearOverlay();
         
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
+        // Update video toggle button state
+        const videoToggleBtn = document.getElementById('videoToggleBtn');
+        if (videoToggleBtn) {
+            videoToggleBtn.classList.remove('active');
+            videoToggleBtn.querySelector('span:last-child').textContent = 'Start Video';
+        }
         this.isRunning = false;
         this.clearHover();
     }
@@ -952,11 +999,22 @@ class TalkingObjectsApp {
 
 // Initialize app - will be called after scripts load
 // Check if DOM is already loaded, otherwise wait for it
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+try {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Initializing TalkingObjectsApp...');
+            window.app = new TalkingObjectsApp();
+        });
+    } else {
+        // DOM already loaded, initialize immediately
+        console.log('Initializing TalkingObjectsApp...');
         window.app = new TalkingObjectsApp();
-    });
-} else {
-    // DOM already loaded, initialize immediately
-    window.app = new TalkingObjectsApp();
+    }
+} catch (error) {
+    console.error('Error initializing app:', error);
+    const statusEl = document.getElementById('loadingStatus');
+    if (statusEl) {
+        statusEl.textContent = '✗ Initialization failed. Check console.';
+        statusEl.style.color = '#ef4444';
+    }
 }
