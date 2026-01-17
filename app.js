@@ -389,10 +389,10 @@ class TalkingObjectsApp {
                 speechBubble: null
             });
             
-            // New object introduces itself
+            // New object introduces itself - slightly faster
             setTimeout(() => {
                 this.makeObjectTalk(id, 'greetings');
-            }, 500);
+            }, 300);
         }
         
         this.updateObjectsDisplay();
@@ -423,25 +423,25 @@ class TalkingObjectsApp {
         const objectArray = Array.from(this.objects.values());
         if (objectArray.length < 2) return;
         
-        // Randomly trigger conversations
-        if (Math.random() < 0.02) { // 2% chance per detection
+        // Randomly trigger conversations - increased frequency
+        if (Math.random() < 0.06) { // 6% chance per detection (was 2%)
             const obj1 = objectArray[Math.floor(Math.random() * objectArray.length)];
             const obj2 = objectArray[Math.floor(Math.random() * objectArray.length)];
             
-            if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 3000) {
+            if (obj1.id !== obj2.id && Date.now() - obj1.lastSpoke > 2000) { // Reduced cooldown from 3000 to 2000ms
                 this.makeObjectTalk(obj1.id, 'conversations');
                 setTimeout(() => {
                     if (this.objects.has(obj2.id)) {
                         this.makeObjectTalk(obj2.id, 'responses');
                     }
-                }, 1500);
+                }, 1200); // Slightly faster response time
             }
         }
         
-        // Random solo dialogue
-        if (Math.random() < 0.01 && objectArray.length > 0) { // 1% chance per detection
+        // Random solo dialogue - increased frequency
+        if (Math.random() < 0.04 && objectArray.length > 0) { // 4% chance per detection (was 1%)
             const obj = objectArray[Math.floor(Math.random() * objectArray.length)];
-            if (Date.now() - obj.lastSpoke > 4000) {
+            if (Date.now() - obj.lastSpoke > 2000) { // Reduced cooldown from 3000 to 2000ms
                 this.makeObjectTalk(obj.id, 'random');
             }
         }
@@ -460,6 +460,7 @@ class TalkingObjectsApp {
         // Remove old speech bubble
         if (obj.speechBubble) {
             obj.speechBubble.remove();
+            obj.speechBubble = null;
         }
         
         // Create speech bubble
@@ -468,24 +469,127 @@ class TalkingObjectsApp {
         bubble.textContent = dialogue;
         document.body.appendChild(bubble);
         
-        // Position bubble above object
-        const videoRect = this.video.getBoundingClientRect();
-        const x = videoRect.left + (this.video.videoWidth - obj.centerX) * (videoRect.width / this.video.videoWidth);
-        const y = videoRect.top + obj.centerY * (videoRect.height / this.video.videoHeight) - 100;
+        // Force layout calculation to get actual dimensions
+        bubble.style.visibility = 'hidden';
+        bubble.style.position = 'fixed';
+        const bubbleWidth = bubble.offsetWidth || 200;
+        const bubbleHeight = bubble.offsetHeight || 60;
         
-        bubble.style.left = `${x}px`;
-        bubble.style.top = `${y}px`;
+        // Calculate position - align bubble centered above emoji face
+        const videoRect = this.video.getBoundingClientRect();
+        const scaleX = videoRect.width / this.video.videoWidth;
+        const scaleY = videoRect.height / this.video.videoHeight;
+        
+        // Account for video being flipped (scaleX(-1))
+        // The emoji is drawn at obj.centerX, obj.centerY
+        const screenX = videoRect.left + (this.video.videoWidth - obj.centerX) * scaleX;
+        const screenY = videoRect.top + obj.centerY * scaleY;
+        
+        // Calculate emoji face size (same as in drawOverlays)
+        const faceSize = Math.min(obj.width, obj.height, 80);
+        const emojiRadius = (faceSize / 2 + 5) * scaleY;
+        
+        // Position bubble right above the emoji circle (very close)
+        let bubbleX = screenX - bubbleWidth / 2;
+        let bubbleY = screenY - emojiRadius - bubbleHeight - 8; // Only 8px gap between emoji and bubble
+        
+        // Keep bubble within screen bounds
+        const padding = 10;
+        bubbleX = Math.max(padding, Math.min(bubbleX, window.innerWidth - bubbleWidth - padding));
+        bubbleY = Math.max(padding, Math.min(bubbleY, window.innerHeight - bubbleHeight - padding));
+        
+        // Check for overlaps with other bubbles and adjust position
+        const finalPosition = this.findNonOverlappingPosition(bubbleX, bubbleY, bubbleWidth, bubbleHeight, obj.id);
+        
+        bubble.style.left = `${finalPosition.x}px`;
+        bubble.style.top = `${finalPosition.y}px`;
+        bubble.style.visibility = 'visible';
         
         obj.speechBubble = bubble;
+        obj.bubbleX = finalPosition.x;
+        obj.bubbleY = finalPosition.y;
+        obj.bubbleWidth = bubbleWidth;
+        obj.bubbleHeight = bubbleHeight;
         
-        // Remove bubble after 4 seconds
+        // Start fade out after 2.5 seconds, remove after 3 seconds total
         setTimeout(() => {
             if (bubble.parentNode) {
-                bubble.style.animation = 'fadeIn 0.3s reverse';
-                setTimeout(() => bubble.remove(), 300);
+                bubble.style.opacity = '0';
+                bubble.style.transition = 'opacity 0.5s ease-out';
+                setTimeout(() => {
+                    if (bubble.parentNode) {
+                        bubble.remove();
+                    }
+                    obj.speechBubble = null;
+                    obj.dialogue = null;
+                }, 500);
             }
-            obj.dialogue = null;
-        }, 4000);
+        }, 2500);
+    }
+    
+    findNonOverlappingPosition(x, y, width, height, excludeId) {
+        // Get all active bubbles (excluding the current one)
+        const activeBubbles = [];
+        for (const obj of this.objects.values()) {
+            if (obj.speechBubble && obj.id !== excludeId && 
+                obj.bubbleX !== undefined && obj.bubbleY !== undefined) {
+                activeBubbles.push({
+                    x: obj.bubbleX,
+                    y: obj.bubbleY,
+                    width: obj.bubbleWidth || width,
+                    height: obj.bubbleHeight || height
+                });
+            }
+        }
+        
+        // Check for overlaps and adjust position
+        let adjustedX = x;
+        let adjustedY = y;
+        const padding = 10; // Space between bubbles
+        const maxAttempts = 15;
+        let attempts = 0;
+        const minY = 10; // Minimum Y position
+        const maxY = window.innerHeight - height - 10; // Maximum Y position
+        
+        while (attempts < maxAttempts) {
+            let hasOverlap = false;
+            
+            for (const other of activeBubbles) {
+                // Check if rectangles overlap (with padding)
+                if (!(adjustedY + height + padding < other.y || 
+                      adjustedY > other.y + other.height + padding ||
+                      adjustedX + width + padding < other.x || 
+                      adjustedX > other.x + other.width + padding)) {
+                    hasOverlap = true;
+                    // Try moving up first
+                    const moveUpY = other.y - height - padding;
+                    if (moveUpY >= minY) {
+                        adjustedY = moveUpY;
+                        break;
+                    } else {
+                        // Can't move up, try moving down
+                        adjustedY = other.y + other.height + padding;
+                        // Or try moving horizontally
+                        if (adjustedX + width + padding < window.innerWidth) {
+                            adjustedX = other.x + other.width + padding;
+                        } else {
+                            adjustedX = other.x - width - padding;
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            if (!hasOverlap) break;
+            
+            // Keep within bounds
+            adjustedY = Math.max(minY, Math.min(adjustedY, maxY));
+            adjustedX = Math.max(10, Math.min(adjustedX, window.innerWidth - width - 10));
+            
+            attempts++;
+        }
+        
+        return { x: adjustedX, y: Math.max(minY, adjustedY) };
     }
     
     drawOverlays() {

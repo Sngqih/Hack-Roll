@@ -190,17 +190,20 @@ header p {
 }
 
 .speech-bubble {
-    position: absolute;
+    position: fixed;
     background: rgba(255, 255, 255, 0.95);
     color: #333;
     padding: 10px 15px;
     border-radius: 15px;
     font-size: 0.9rem;
     max-width: 200px;
+    min-width: 120px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     pointer-events: none;
     z-index: 1000;
     animation: fadeIn 0.3s;
+    word-wrap: break-word;
+    text-align: center;
 }
 
 .speech-bubble::after {
