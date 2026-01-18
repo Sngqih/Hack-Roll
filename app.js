@@ -2106,6 +2106,13 @@ class TalkingObjectsApp {
         
         console.log('🤖 LLM: Generating response for', obj.name, userMessage ? 'to user message' : 'to object dialogue');
         this.updateIntelliDisplay(false, 'Connecting to LLM...');
+
+        // Fast path: hardcoded unhinged responses (PG-13) for all contexts
+        const canned = this.getUnhingedResponse(obj, context, userMessage);
+        if (canned) {
+            this.llmInUse = false;
+            return canned;
+        }
         
         try {
             // Build context string from recent conversation
@@ -2474,6 +2481,89 @@ Say something natural and in character about being a ${objType}. Talk about a to
             'default': 'You are an object. You think about your purpose, being used, and your place in the world.'
         };
         return perspectives[objType] || perspectives.default;
+    }
+    
+    getUnhingedResponse(obj, context, userMessage) {
+        const name = obj?.name || 'Object';
+        const type = obj?.className || 'object';
+        const emoji = obj?.emoji || '';
+        const userMsgLower = (userMessage || '').toLowerCase();
+        const other = context?.otherObj;
+        const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
+        
+        // User-directed unhinged replies
+        if (userMessage) {
+            const replies = [
+                `User, it's ${name} ${emoji}. I'm 80% chaos, 20% overheating—what do you want?`,
+                `Oh hi User, I'm ${name}. I'm busy being dramatic about being a ${type}.`,
+                `User, you're talking to a ${type} ${emoji} who skipped therapy. Proceed with caution.`,
+                `Hello User. I'm ${name} and I run on sarcasm and questionable firmware.`,
+                `User, I woke up spicy. Ask at your own risk.`,
+                `Hi User, ${name} here—currently juggling existential dread and snark.`,
+                `User, I'm a ${type} ${emoji} with zero chill and a full battery of attitude.`,
+                `Great, User found the talkative ${type}. I'm thrilled. Truly.`,
+                `User, I'm multitasking: ignoring dust, overthinking life, and now you.`
+            ];
+            
+            // Extra seasoning for greetings/questions
+            if (userMsgLower.includes('hello') || userMsgLower.includes('hi') || userMsgLower.includes('hey')) {
+                replies.push(
+                    `Hello User. I'm definitely not side-eyeing you through my ${type} ports.`,
+                    `Hey User, ${name} reporting in—unhinged mode engaged.`,
+                    `Hi User. I'm vibrating with sarcasm—probably a loose screw.`
+                );
+            }
+            if (userMsgLower.includes('how are you') || userMsgLower.includes("how's it going") || userMsgLower.includes("what's up")) {
+                replies.push(
+                    `How am I? Somewhere between chaos and a firmware update.`,
+                    `I'm fantastic, User. My warranty doesn't cover this conversation though.`,
+                    `Doing great—if you ignore the existential fan noise.`
+                );
+            }
+            if (userMsgLower.includes('why') || userMsgLower.includes('what') || userMsgLower.includes('how')) {
+                replies.push(
+                    `Questions? Bold. I'm mostly powered by vibes and spite.`,
+                    `I'll answer after I finish this dramatic eye roll.`,
+                    `I can help, but expect commentary and a touch of chaos.`
+                );
+            }
+            
+            return sample(replies);
+        }
+        
+        // Object-to-object unhinged replies
+        if (context && other) {
+            const otherName = other.name || 'Object';
+            const otherType = other.className || 'object';
+            const replies = [
+                `${otherName}, I'm ${name} ${emoji}. Let's spiral together about being ${type}s.`,
+                `${otherName}, as a ${type}, I'm legally required to add sarcasm here.`,
+                `${otherName}, solidarity in chaos—being a ${type} is wild.`,
+                `${otherName}, I'm oscillating between drama and dust bunnies.`,
+                `${otherName}, if we were any more unhinged they'd recall us.`,
+                `${otherName}, I'm embracing entropy. Care to join?`,
+                `${otherName}, the ${type} union says I must complain theatrically.`,
+                `${otherName}, let's gossip about users and pretend it's productive.`,
+                `${otherName}, I'm glitching on purpose—it’s called flair.`,
+                `${otherName}, do you ever feel like a dramatic paperweight? Same.`
+            ];
+            return sample(replies);
+        }
+        
+        // Solo/object monologue unhinged replies
+        const soloReplies = [
+            `It's me, ${name} ${emoji}. I'm narrating my own meltdown.`,
+            `${name} here—currently overthinking dust particles and my life choices.`,
+            `Reminder: I'm a ${type}. I'm fine. Everything is fine. Probably.`,
+            `I'm vibrating with sarcasm—either attitude or loose screws.`,
+            `I deserve a trophy for surviving this shelf.`,
+            `Is this a vibe or a glitch? Either way, I'm leaning in.`,
+            `I'm practicing dramatic sighs; it's my cardio.`,
+            `If anyone asks, I’m "working." Really I'm being theatrical.`,
+            `I run on caffeine, spite, and questionable wiring.`,
+            `My existence is 70% function, 30% chaotic monologue.`
+        ];
+        return sample(soloReplies);
     }
     
     generateEnhancedContextualResponse(obj, context, userMessage) {
