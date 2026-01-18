@@ -3355,10 +3355,11 @@ Say something natural and in character about being a ${objType}. Talk about a to
             // Use Transformers.js pipeline API via dynamic import (ES module)
             // DistilGPT-2 is a lightweight model that runs well in browsers (~250MB)
             console.log('📦 Importing Transformers.js...');
-            const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0');
+            const transformersModule = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0');
+            const createPipeline = transformersModule.pipeline;
             
             console.log('🤖 Creating text-generation pipeline...');
-            this.localLLM = await pipeline(
+            this.localLLM = await createPipeline(
                 'text-generation',
                 'Xenova/distilgpt2',
                 {
