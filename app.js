@@ -3381,25 +3381,51 @@ Say something natural and in character about being a ${objType}. Talk about a to
             
             const data = await response.json();
             
-            // Ollama returns { response: "...", done: true/false }
-            let generatedText = data.response || '';
+            // Debug: log the full response structure
+            console.log('🤖 Ollama API response structure:', JSON.stringify(data).substring(0, 500));
+            
+            // Ollama returns { response: "...", done: true/false } for non-streaming
+            // Make sure we're extracting the actual response field, not the prompt
+            let generatedText = '';
+            
+            if (data.response && typeof data.response === 'string') {
+                generatedText = data.response;
+            } else if (typeof data === 'string') {
+                // If the entire response is a string, it might be the response text
+                generatedText = data;
+            } else {
+                // Try to find response in different possible fields
+                generatedText = data.response_text || data.text || data.output || data.content || '';
+            }
             
             if (!generatedText || generatedText.trim().length < 5) {
+                console.error('❌ Ollama response extraction failed. Data:', data);
                 throw new Error('Ollama returned empty or invalid response');
             }
             
             // Clean up the response
             generatedText = generatedText.trim();
             
-            console.log('🤖 Ollama raw response:', generatedText.substring(0, 200));
-            console.log('🤖 Prompt start:', prompt.substring(0, 100));
+            console.log('🤖 Ollama extracted response (first 200 chars):', generatedText.substring(0, 200));
+            console.log('🤖 Prompt (first 100 chars):', prompt.substring(0, 100));
             
-            // Remove prompt remnants if present
-            const promptLower = prompt.toLowerCase();
-            const generatedLower = generatedText.toLowerCase();
+            // CRITICAL: Verify we're not returning the prompt itself
+            // If the generated text is exactly or mostly the prompt, something is wrong
+            const promptLower = prompt.toLowerCase().trim();
+            const generatedLower = generatedText.toLowerCase().trim();
             
-            // Strategy 1: Check if generated text starts with prompt
-            if (generatedLower.startsWith(promptLower.substring(0, Math.min(100, promptLower.length)))) {
+            // Check if the generated text IS the prompt (exactly equal - this shouldn't happen)
+            // But allow if response starts with prompt but has more content (we'll remove prefix)
+            if (generatedLower === promptLower) {
+                console.error('⚠️ WARNING: Ollama returned exactly the prompt as response! This should not happen.');
+                console.error('Prompt length:', prompt.length, 'Generated length:', generatedText.length);
+                throw new Error('Ollama returned the exact prompt instead of generating a response. Check model configuration.');
+            }
+            
+            // Strategy 1: Check if generated text starts with prompt (but not exactly equal)
+            const promptPrefix = promptLower.substring(0, Math.min(100, promptLower.length));
+            if (generatedLower.startsWith(promptPrefix) && generatedLower.length > promptLower.length) {
+                // Only remove if there's more content after the prompt
                 generatedText = generatedText.substring(prompt.length).trim();
                 console.log('🤖 Removed prompt prefix from Ollama response');
             }
@@ -3499,6 +3525,16 @@ Say something natural and in character about being a ${objType}. Talk about a to
                 }
             }
             
+            // Final validation: Make absolutely sure we're not returning the prompt
+            const finalCheck = generatedText.toLowerCase().trim();
+            const promptCheck = prompt.toLowerCase().trim();
+            if (finalCheck === promptCheck || finalCheck.startsWith(promptCheck.substring(0, Math.min(200, promptCheck.length)))) {
+                console.error('❌ ERROR: Final validation failed - returning prompt instead of response!');
+                console.error('This means Ollama is returning the prompt. Data:', JSON.stringify(data).substring(0, 300));
+                throw new Error('Ollama returned the prompt as response. The model may not be generating correctly.');
+            }
+            
+            console.log('✅ Final Ollama response (first 150 chars):', generatedText.substring(0, 150));
             return generatedText;
             
         } catch (error) {
