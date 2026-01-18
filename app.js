@@ -2208,11 +2208,27 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     // Clean up the response
                     generatedText = generatedText.trim();
                     
-                    // Remove any prompt remnants
-                    const promptStart = prompt.substring(0, 30);
-                    if (generatedText.includes(promptStart)) {
-                        generatedText = generatedText.replace(promptStart, '').trim();
+                    // Remove any prompt remnants - Transformers.js might include prompt even with return_full_text: false
+                    // Try multiple strategies to remove the prompt
+                    const promptLower = prompt.toLowerCase();
+                    const generatedLower = generatedText.toLowerCase();
+                    
+                    // Strategy 1: If generated text starts with prompt, remove it
+                    if (generatedLower.startsWith(promptLower.substring(0, Math.min(100, promptLower.length)))) {
+                        generatedText = generatedText.substring(prompt.length).trim();
                     }
+                    // Strategy 2: Find and remove prompt if it appears early in the text
+                    else {
+                        const promptStart = prompt.substring(0, 50).toLowerCase();
+                        const promptIndex = generatedLower.indexOf(promptStart);
+                        if (promptIndex >= 0 && promptIndex < 100) {
+                            generatedText = generatedText.substring(promptIndex + promptStart.length).trim();
+                        }
+                    }
+                    
+                    // Strategy 3: Remove common prompt patterns
+                    generatedText = generatedText.replace(/^You are .+?\.\s*/i, '').trim();
+                    generatedText = generatedText.replace(/^Say something .+?\.\s*/i, '').trim();
                     
                     // Clean up the response - but preserve "User" references
                     generatedText = generatedText.replace(/^(You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
