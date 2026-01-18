@@ -3643,13 +3643,96 @@ Say something natural and in character about being a ${objType}. Talk about a to
             // Clean up the response
             generatedText = generatedText.trim();
             
+            console.log('🤖 Ollama raw response:', generatedText.substring(0, 200));
+            console.log('🤖 Prompt start:', prompt.substring(0, 100));
+            
             // Remove prompt remnants if present
             const promptLower = prompt.toLowerCase();
             const generatedLower = generatedText.toLowerCase();
             
-            // Check if generated text starts with prompt
+            // Strategy 1: Check if generated text starts with prompt
             if (generatedLower.startsWith(promptLower.substring(0, Math.min(100, promptLower.length)))) {
                 generatedText = generatedText.substring(prompt.length).trim();
+                console.log('🤖 Removed prompt prefix from Ollama response');
+            }
+            
+            // Strategy 2: Remove conversation context patterns that LLM might output
+            // Remove patterns like "ObjectName: " or "User: " that indicate conversation logs
+            // More aggressive pattern matching to catch all variations
+            generatedText = generatedText.replace(/\b[A-Z][a-zA-Z]+:\s*"[^"]*"\s*/g, '').trim(); // Remove "Name: "message""
+            generatedText = generatedText.replace(/\b[A-Z][a-zA-Z]+:\s*[^.!?]*[.!?]?\s*/g, '').trim(); // Remove "Name: message" (without quotes)
+            generatedText = generatedText.replace(/\bUser:\s*[^.!?]*[.!?]?\s*/gi, '').trim(); // Remove "User: ..."
+            generatedText = generatedText.replace(/\bRecent conversation:\s*/gi, '').trim(); // Remove "Recent conversation:"
+            
+            // Remove conversation log patterns more aggressively - look for "Name: " followed by anything
+            generatedText = generatedText.replace(/\s*[A-Z][a-zA-Z]+:\s*/g, ' ').trim(); // Replace "Name: " with space
+            generatedText = generatedText.replace(/\s+/g, ' '); // Clean up multiple spaces
+            
+            // Remove fragments that are part of conversation logs (like "ve a good WiFi connection!" from "I love a good WiFi connection!")
+            // These often appear as sentence fragments at the start
+            if (generatedText.match(/^[a-z]/) && generatedText.length < 50) {
+                // Likely a fragment - try to find the first complete sentence
+                const firstSentenceMatch = generatedText.match(/[.!?]\s+[A-Z]/);
+                if (firstSentenceMatch) {
+                    generatedText = generatedText.substring(firstSentenceMatch.index + 2).trim();
+                }
+            }
+            
+            // Strategy 3: Remove instruction patterns
+            const instructionPatterns = [
+                /Address User directly \(say "User" when referring to them\)\.\s*/gi,
+                /Keep it short \(1-2 sentences max\)[^.!?]*?[.!?\s]*/gi,
+                /Be conversational and engaging\.\s*/gi,
+                /Be natural and engaging\.\s*/gi,
+                /Respond naturally as [^.!?]+ to User\.\s*/gi,
+                /Respond naturally as [^.!?]+ to [^.!?]+\.\s*/gi,
+                /Reference what [^.!?]+ said[^.!?]*?[.!?\s]*/gi,
+                /Match your [^.!?]+ personality\.\s*/gi,
+                /This is a conversation between objects[^.!?]*?[.!?\s]*/gi,
+                /Talk about topics relevant to[^.!?]*?[.!?\s]*/gi,
+                /Build on their idea[^.!?]*?[.!?\s]*/gi,
+                /Share your own [^.!?]+-related concerns[^.!?]*?[.!?\s]*/gi,
+                /Relate it to something you experience[^.!?]*?[.!?\s]*/gi,
+                /Make it feel like objects genuinely discussing their lives\.\s*/gi,
+                /Bounce off their ideas naturally\.\s*/gi,
+                /Say something natural and in character[^.!?]*?[.!?\s]*/gi
+            ];
+            
+            for (const pattern of instructionPatterns) {
+                generatedText = generatedText.replace(pattern, '').trim();
+            }
+            
+            // Strategy 4: Extract only sentences that look like dialogue (not conversation logs)
+            // Split by sentences and filter
+            const sentences = generatedText.match(/[^.!?]+[.!?]+/g) || [generatedText];
+            const filteredSentences = [];
+            
+            const instructionWords = /^(Address|Keep|Be|Respond|Reference|Match|Talk|Build|Share|Relate|Make|Bounce|Say something|You are|This is a conversation|Recent conversation)/i;
+            const conversationLogPattern = /^[A-Z][a-z]+:\s*/; // Matches "Name: "
+            
+            for (const sentence of sentences) {
+                const trimmed = sentence.trim();
+                // Skip if too short
+                if (trimmed.length < 10) continue;
+                // Skip if it's a conversation log entry
+                if (conversationLogPattern.test(trimmed)) continue;
+                // Skip if it starts with instruction words
+                if (instructionWords.test(trimmed)) continue;
+                // Skip if it contains instruction phrases
+                if (/\(say|when referring|1-2 sentences|conversational and engaging|natural and engaging/i.test(trimmed)) continue;
+                // Keep sentences that look like dialogue
+                filteredSentences.push(trimmed);
+            }
+            
+            // If we found good sentences, use them
+            if (filteredSentences.length > 0) {
+                generatedText = filteredSentences.join(' ').trim();
+                // Limit to first 2-3 sentences
+                const sentenceMatch = generatedText.match(/^([^.!?]+[.!?]+){1,3}/);
+                if (sentenceMatch) {
+                    generatedText = sentenceMatch[0].trim();
+                }
+                console.log('🤖 Filtered Ollama response to dialogue sentences');
             }
             
             // Clean up common patterns
