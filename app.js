@@ -2180,15 +2180,30 @@ Say something natural and in character about being a ${objType}. Talk about a to
                         do_sample: true
                     });
                     
-                    // Extract generated text
+                    // Debug: log the result structure
+                    console.log('🤖 LLM result type:', typeof result, 'isArray:', Array.isArray(result));
+                    console.log('🤖 LLM result:', result);
+                    
+                    // Extract generated text - Transformers.js returns format: [{ generated_text: "..." }]
                     let generatedText = '';
                     if (Array.isArray(result) && result.length > 0) {
-                        generatedText = result[0].generated_text || '';
-                    } else if (result.generated_text) {
-                        generatedText = result.generated_text;
+                        // Check if it's an object with generated_text property
+                        if (typeof result[0] === 'object' && result[0].generated_text) {
+                            generatedText = result[0].generated_text;
+                        } else if (typeof result[0] === 'string') {
+                            generatedText = result[0];
+                        } else {
+                            // Try to stringify or get first property
+                            generatedText = result[0].text || result[0].output || JSON.stringify(result[0]);
+                        }
+                    } else if (result && typeof result === 'object') {
+                        // Single object result
+                        generatedText = result.generated_text || result.text || result.output || '';
                     } else if (typeof result === 'string') {
                         generatedText = result;
                     }
+                    
+                    console.log('🤖 Extracted generated text:', generatedText.substring(0, 100));
                     
                     // Clean up the response
                     generatedText = generatedText.trim();
