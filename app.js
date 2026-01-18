@@ -3336,13 +3336,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
     async loadLocalLLM() {
         // Load Transformers.js model locally in the browser
         try {
-            // Check if Transformers.js is available
-            if (typeof window.pipeline === 'undefined' && typeof pipeline === 'undefined') {
-                console.error('❌ Transformers.js not loaded');
-                this.updateIntelliDisplay(false, 'Transformers.js library not found');
-                return;
-            }
-            
+            // Transformers.js will be dynamically imported - no need to check beforehand
             if (this.localLLMLoading) {
                 console.log('🤖 LLM: Model already loading...');
                 return;
