@@ -33,6 +33,8 @@ class TalkingObjectsApp {
         this.llmEnabled = true; // Toggle for LLM usage
         this.llmInUse = false; // Track if LLM is currently generating
         this.currentlySpeaking = null; // Track which object is currently speaking (to prevent interruptions)
+        this.localLLM = null; // Local Transformers.js model instance
+        this.localLLMLoading = false; // Track if local LLM is loading
         
         // ElevenLabs TTS
         this.elevenLabsApiKey = 'sk_da8afb34cd0a951cbca84a19a3a346cf1408e42cc24ca06f'; // API key stored in memory
@@ -268,12 +270,12 @@ class TalkingObjectsApp {
         this.setupObjectFilters();
         
         // Initialize IntelliDisplay - start with checking status
-        // Test LLM connection on init
-        this.updateIntelliDisplay(false, 'Initializing LLM...');
-        // Test API connection after a short delay
+        // Load local LLM model on init
+        this.updateIntelliDisplay(false, 'Loading local LLM model...');
+        // Load local model after a short delay
         setTimeout(() => {
-            this.testLLMConnection().catch(err => {
-                console.warn('Initial LLM test failed:', err);
+            this.loadLocalLLM().catch(err => {
+                console.warn('Local LLM loading failed:', err);
             });
         }, 2000);
         
@@ -2155,18 +2157,89 @@ ${contextString}
 Say something natural and in character about being a ${objType}. Talk about a topic relevant to your type (like ${objTopics[0]}, ${objTopics[1]}, or ${objTopics[2]}). Keep it short (1-2 sentences max). Be conversational and engaging.`;
             }
             
-            // Use a lightweight LLM API - try multiple endpoints for reliability
+            // Use local LLM model (Transformers.js)
+            // If local model not loaded, try to load it first
+            if (!this.localLLM && !this.localLLMLoading) {
+                console.log('🤖 LLM: Local model not loaded, loading now...');
+                await this.loadLocalLLM();
+            }
+            
+            // If local model is available, use it
+            if (this.localLLM) {
+                try {
+                    console.log('🤖 LLM: Generating with local model...');
+                    this.updateIntelliDisplay(true, 'Generating with local LLM...');
+                    
+                    const result = await this.localLLM(prompt, {
+                        max_new_tokens: 60,
+                        temperature: 0.85,
+                        top_p: 0.92,
+                        top_k: 50,
+                        repetition_penalty: 1.1,
+                        return_full_text: false,
+                        do_sample: true
+                    });
+                    
+                    // Extract generated text
+                    let generatedText = '';
+                    if (Array.isArray(result) && result.length > 0) {
+                        generatedText = result[0].generated_text || '';
+                    } else if (result.generated_text) {
+                        generatedText = result.generated_text;
+                    } else if (typeof result === 'string') {
+                        generatedText = result;
+                    }
+                    
+                    // Clean up the response
+                    generatedText = generatedText.trim();
+                    
+                    // Remove any prompt remnants
+                    const promptStart = prompt.substring(0, 30);
+                    if (generatedText.includes(promptStart)) {
+                        generatedText = generatedText.replace(promptStart, '').trim();
+                    }
+                    
+                    // Clean up the response - but preserve "User" references
+                    generatedText = generatedText.replace(/^(You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
+                    generatedText = generatedText.replace(/\buser\b/gi, 'User');
+                    
+                    // Ensure it's not too long
+                    if (generatedText.length > 120) {
+                        generatedText = generatedText.substring(0, 120).trim();
+                        const lastPeriod = generatedText.lastIndexOf('.');
+                        const lastExclamation = generatedText.lastIndexOf('!');
+                        const lastQuestion = generatedText.lastIndexOf('?');
+                        const lastPunctuation = Math.max(lastPeriod, lastExclamation, lastQuestion);
+                        if (lastPunctuation > 30) {
+                            generatedText = generatedText.substring(0, lastPunctuation + 1);
+                        }
+                    }
+                    
+                    // Validate response
+                    if (generatedText.length >= 5) {
+                        console.log('✅ LLM: Generated response:', generatedText.substring(0, 50) + '...');
+                        this.llmInUse = false;
+                        return generatedText;
+                    } else {
+                        throw new Error('Local LLM generated invalid response - will use fallback');
+                    }
+                } catch (localError) {
+                    console.warn('🚨 Local LLM generation error:', localError);
+                    throw new Error('Local LLM generation failed - will use fallback');
+                }
+            }
+            
+            // Fallback: Try API (though it's likely unavailable)
             let response;
             let data;
             
             try {
                 // Create abort controller for timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout for better models
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
                 
-                // Try models - prioritize stable ones first since DialoGPT may be deprecated (410)
-                // Fallback chain: gpt2 -> distilgpt2 -> DialoGPT-medium -> DialoGPT-small
-                let modelUrl = 'https://api-inference.huggingface.co/models/gpt2';
+                // Use distilgpt2 as fallback
+                let modelUrl = 'https://api-inference.huggingface.co/models/distilgpt2';
                 
                 response = await fetch(modelUrl, {
                     method: 'POST',
@@ -3260,92 +3333,64 @@ Say something natural and in character about being a ${objType}. Talk about a to
         }
     }
     
-    async testLLMConnection() {
-        // Test if LLM API is accessible - try multiple models
+    async loadLocalLLM() {
+        // Load Transformers.js model locally in the browser
         try {
-            console.log('🧪 Testing LLM connection...');
-            this.updateIntelliDisplay(false, 'Testing LLM connection...');
+            // Check if Transformers.js is available
+            if (typeof window.pipeline === 'undefined' && typeof pipeline === 'undefined') {
+                console.error('❌ Transformers.js not loaded');
+                this.updateIntelliDisplay(false, 'Transformers.js library not found');
+                return;
+            }
             
-            // Try multiple models - some may be deprecated (410) or require auth
-            const modelsToTry = [
-                'gpt2',
-                'distilgpt2',
-                'microsoft/DialoGPT-small',
-                'facebook/blenderbot-400M-distill'
-            ];
+            if (this.localLLMLoading) {
+                console.log('🤖 LLM: Model already loading...');
+                return;
+            }
             
-            let lastError = null;
+            if (this.localLLM) {
+                console.log('✅ LLM: Local model already loaded');
+                this.updateIntelliDisplay(true, 'Local LLM ready - Using DistilGPT-2');
+                return;
+            }
             
-            for (const modelName of modelsToTry) {
-                try {
-                    const testController = new AbortController();
-                    const testTimeout = setTimeout(() => testController.abort(), 5000);
-                    
-                    // Use format: https://api-inference.huggingface.co/models/{model_name}
-                    const modelUrl = `https://api-inference.huggingface.co/models/${modelName}`;
-                    console.log(`🧪 Testing model: ${modelName}...`);
-                    
-                    const testResponse = await fetch(modelUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: 'Hello',
-                            parameters: {
-                                max_new_tokens: 5,
-                                return_full_text: false
-                            }
-                        }),
-                        signal: testController.signal
-                    });
-                    
-                    clearTimeout(testTimeout);
-                    
-                    if (testResponse.ok) {
-                        console.log(`✅ LLM connection test successful with ${modelName}`);
-                        this.updateIntelliDisplay(true, `LLM ready - Using ${modelName}`);
-                        return; // Success!
-                    } else if (testResponse.status === 503) {
-                        // Model loading - this is OK, means the endpoint exists
-                        console.log(`⚠️ Model ${modelName} is loading (503) - endpoint exists`);
-                        this.updateIntelliDisplay(true, `LLM endpoint found (may need warm-up)`);
-                        return;
-                    } else if (testResponse.status === 401 || testResponse.status === 403) {
-                        console.warn(`⚠️ Model ${modelName} requires authentication (${testResponse.status})`);
-                        lastError = `Authentication required`;
-                        continue; // Try next model
-                    } else if (testResponse.status === 410) {
-                        console.warn(`⚠️ Model ${modelName} no longer available (410 Gone)`);
-                        lastError = `Model ${modelName} deprecated`;
-                        continue; // Try next model
-                    } else {
-                        const errorText = await testResponse.text().catch(() => '');
-                        console.warn(`⚠️ Model ${modelName} test failed:`, testResponse.status, errorText.substring(0, 100));
-                        lastError = `API returned ${testResponse.status}`;
-                        continue; // Try next model
+            this.localLLMLoading = true;
+            console.log('🤖 Loading local LLM model (DistilGPT-2)...');
+            this.updateIntelliDisplay(false, 'Loading DistilGPT-2 model... (this may take a minute)');
+            
+            // Use Transformers.js pipeline API
+            // DistilGPT-2 is a lightweight model that runs well in browsers (~250MB)
+            // Note: Transformers.js is already loaded via script tag
+            if (typeof window.pipeline !== 'undefined') {
+                // If pipeline is available globally
+                this.localLLM = await window.pipeline(
+                    'text-generation',
+                    'Xenova/distilgpt2',
+                    {
+                        device: 'cpu',
                     }
-                } catch (modelError) {
-                    console.warn(`⚠️ Model ${modelName} test error:`, modelError.message);
-                    lastError = modelError.message;
-                    continue; // Try next model
-                }
+                );
+            } else {
+                // Dynamic import if needed
+                const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0');
+                this.localLLM = await pipeline(
+                    'text-generation',
+                    'Xenova/distilgpt2',
+                    {
+                        device: 'cpu',
+                    }
+                );
             }
             
-            // All models failed
-            console.error('❌ All LLM models failed to connect');
-            console.warn('⚠️ Hugging Face Inference API appears to be unavailable (410 Gone).');
-            console.warn('⚠️ The free Inference API may have been deprecated or requires authentication.');
-            console.warn('⚠️ The app will use fallback dialogue instead.');
-            this.updateIntelliDisplay(false, 'Hugging Face API unavailable (410) - Using fallback dialogue');
+            this.localLLMLoading = false;
+            console.log('✅ Local LLM model loaded successfully!');
+            this.updateIntelliDisplay(true, 'Local LLM ready - Using DistilGPT-2');
+            
         } catch (error) {
-            console.error('❌ LLM connection test failed:', error);
-            const errorMsg = error.message || 'Unknown error';
-            if (errorMsg.includes('CORS') || errorMsg.includes('network') || errorMsg.includes('Failed to fetch')) {
-                this.updateIntelliDisplay(false, 'Network/CORS error - Hugging Face API may be blocked');
-            } else {
-                this.updateIntelliDisplay(false, `Connection error: ${errorMsg.substring(0, 40)}`);
-            }
+            this.localLLMLoading = false;
+            console.error('❌ Failed to load local LLM:', error);
+            this.updateIntelliDisplay(false, `Failed to load local LLM: ${error.message?.substring(0, 40) || 'Unknown error'}`);
+            console.warn('⚠️ Will use fallback dialogue instead');
         }
     }
     
