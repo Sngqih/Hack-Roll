@@ -268,7 +268,14 @@ class TalkingObjectsApp {
         this.setupObjectFilters();
         
         // Initialize IntelliDisplay - start with checking status
-        this.updateIntelliDisplay(false, 'Checking LLM availability...');
+        // Test LLM connection on init
+        this.updateIntelliDisplay(false, 'Initializing LLM...');
+        // Test API connection after a short delay
+        setTimeout(() => {
+            this.testLLMConnection().catch(err => {
+                console.warn('Initial LLM test failed:', err);
+            });
+        }, 2000);
         
         const thresholdInput = document.getElementById('threshold');
         if (thresholdInput) {
@@ -2075,6 +2082,7 @@ class TalkingObjectsApp {
         }
         
         console.log('🤖 LLM: Generating response for', obj.name, userMessage ? 'to user message' : 'to object dialogue');
+        this.updateIntelliDisplay(false, 'Connecting to LLM...');
         
         try {
             // Build context string from recent conversation
@@ -2243,8 +2251,12 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     clearTimeout(fallbackTimeout);
                 }
                 
+                // Log response status for debugging
+                console.log('🤖 LLM: API response status:', response.status, response.statusText);
+                
                 if (response.ok) {
                     data = await response.json();
+                    console.log('🤖 LLM: Successfully received response from API');
                 } else if (response.status === 503) {
                     // Model still loading - wait longer and retry one more time
                     console.log('🤖 LLM: Model still loading, final retry...');
@@ -2278,12 +2290,25 @@ Say something natural and in character about being a ${objType}. Talk about a to
                         throw new Error(`API request failed with status ${response.status} - model may be loading`);
                     }
                 } else {
-                    throw new Error(`API request failed with status ${response.status}`);
+                    // Get error message from response if available
+                    let errorMsg = `API request failed with status ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.error) {
+                            errorMsg += `: ${errorData.error}`;
+                        }
+                    } catch (e) {
+                        // Ignore JSON parse errors
+                    }
+                    console.error('🚨 LLM API Error:', errorMsg);
+                    this.updateIntelliDisplay(false, `API Error: ${response.status} - ${errorMsg.substring(0, 50)}`);
+                    throw new Error(errorMsg);
                 }
             } catch (error) {
                 // Always retry the LLM - don't use fallback unless absolutely necessary
-                console.warn('LLM error, retrying with different approach:', error.message);
+                console.warn('🚨 LLM error, retrying with different approach:', error.message);
                 console.error('Full error details:', error);
+                console.error('Error stack:', error.stack);
                 
                 // Check for CORS errors specifically
                 const errorMsg = error.message || error.toString() || '';
@@ -2434,6 +2459,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
             
             // If still no valid text, throw error to prevent fallback
             if (generatedText.length < 5) {
+                console.error('⚠️ LLM generated invalid/empty response. Response data:', data);
                 throw new Error('LLM generated invalid response - will retry');
             }
             
