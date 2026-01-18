@@ -3358,29 +3358,20 @@ Say something natural and in character about being a ${objType}. Talk about a to
             console.log('🤖 Loading local LLM model (DistilGPT-2)...');
             this.updateIntelliDisplay(false, 'Loading DistilGPT-2 model... (this may take a minute)');
             
-            // Use Transformers.js pipeline API
+            // Use Transformers.js pipeline API via dynamic import (ES module)
             // DistilGPT-2 is a lightweight model that runs well in browsers (~250MB)
-            // Note: Transformers.js is already loaded via script tag
-            if (typeof window.pipeline !== 'undefined') {
-                // If pipeline is available globally
-                this.localLLM = await window.pipeline(
-                    'text-generation',
-                    'Xenova/distilgpt2',
-                    {
-                        device: 'cpu',
-                    }
-                );
-            } else {
-                // Dynamic import if needed
-                const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0');
-                this.localLLM = await pipeline(
-                    'text-generation',
-                    'Xenova/distilgpt2',
-                    {
-                        device: 'cpu',
-                    }
-                );
-            }
+            console.log('📦 Importing Transformers.js...');
+            const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0/dist/transformers.min.js');
+            
+            console.log('🤖 Creating text-generation pipeline...');
+            this.localLLM = await pipeline(
+                'text-generation',
+                'Xenova/distilgpt2',
+                {
+                    device: 'cpu',
+                    dtype: 'q8', // Use quantized model for faster loading
+                }
+            );
             
             this.localLLMLoading = false;
             console.log('✅ Local LLM model loaded successfully!');

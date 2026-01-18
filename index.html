@@ -181,13 +181,8 @@
                     throw new Error('COCO-SSD did not load correctly');
                 }
                 
-                if (statusEl) statusEl.textContent = 'Loading Transformers.js for local LLM...';
-                await loadScript('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0');
-                
-                // Verify Transformers.js loaded
-                if (typeof window.pipeline === 'undefined') {
-                    throw new Error('Transformers.js did not load correctly');
-                }
+                // Transformers.js is an ES module - will be loaded dynamically in app.js when needed
+                // Don't load it here as a script tag - use import() instead
                 
                 if (statusEl) statusEl.textContent = 'Libraries loaded. Initializing app...';
                 // Load app.js after libraries are ready
