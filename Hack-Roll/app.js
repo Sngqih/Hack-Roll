@@ -31,9 +31,8 @@ class TalkingObjectsApp {
         this.conversationContext = []; // Store recent conversation for LLM context
         this.maxContextLength = 10; // Keep last 10 messages for context
         this.llmEnabled = true; // Toggle for LLM usage
-        this.conversationContext = []; // Store recent conversation for LLM context
-        this.maxContextLength = 10; // Keep last 10 messages for context
-        this.llmEnabled = true; // Toggle for LLM usage
+        this.llmInUse = false; // Track if LLM is currently generating
+        this.currentlySpeaking = null; // Track which object is currently speaking (to prevent interruptions)
         
         // ElevenLabs TTS
         this.elevenLabsApiKey = 'sk_da8afb34cd0a951cbca84a19a3a346cf1408e42cc24ca06f'; // API key stored in memory
@@ -267,6 +266,10 @@ class TalkingObjectsApp {
         
         // Settings controls
         this.setupObjectFilters();
+        
+        // Initialize IntelliDisplay - start with checking status
+        this.updateIntelliDisplay(false, 'Checking LLM availability...');
+        
         const thresholdInput = document.getElementById('threshold');
         if (thresholdInput) {
             thresholdInput.addEventListener('input', (e) => {
@@ -690,6 +693,15 @@ class TalkingObjectsApp {
         // Only allow participants to talk
         if (!obj.inParticipantList) return;
         
+        // Prevent interruptions - check if someone else is currently speaking
+        if (this.currentlySpeaking && this.currentlySpeaking !== objectId) {
+            console.log(`${obj.name} is waiting - ${this.currentlySpeaking} is still speaking`);
+            return; // Someone else is talking, wait
+        }
+        
+        // Mark this object as currently speaking
+        this.currentlySpeaking = objectId;
+        
         // Get context-aware dialogue if talking to another object
         let dialogues = obj.personality[dialogueType] || obj.personality.random;
         
@@ -711,10 +723,24 @@ class TalkingObjectsApp {
         if (customDialogue) {
             dialogue = customDialogue;
         } else if (otherObj && dialogueType === 'responses' && otherObj.dialogue) {
-            // If this is a response, try to generate a response based on what the other object said
-            dialogue = await this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
+            // If this is a response, try to generate LLM response - retry if it fails
+            try {
+                dialogue = await this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
+            } catch (error) {
+                // Retry once
+                console.log('🤖 LLM: Retrying dialogue generation...');
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                    dialogue = await this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
+                } catch (retryError) {
+                    console.warn('LLM retry failed, using fallback dialogue');
+                    this.updateIntelliDisplay(false, 'Using fallback dialogue (LLM unavailable)');
+                    dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
+                }
+            }
             if (!dialogue) {
-                // Fallback to regular responses if no contextual response found
+                // If still no dialogue, use fallback
+                this.updateIntelliDisplay(false, 'Using fallback dialogue (LLM unavailable)');
                 dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
             }
         } else {
@@ -837,6 +863,11 @@ class TalkingObjectsApp {
                         }
                         obj.speechBubble = null;
                         obj.dialogue = null;
+                        
+                        // Clear currentlySpeaking flag when this object finishes speaking
+                        if (this.currentlySpeaking === objectId) {
+                            this.currentlySpeaking = null;
+                        }
                     }, 500);
                 }
             }, 2500);
@@ -1476,18 +1507,41 @@ class TalkingObjectsApp {
     }
     
     async generateResponseToDialogue(obj, previousDialogue, otherObj) {
-        // Try LLM first for better contextual responses
+        // Always use LLM - retry if it fails
         if (this.llmEnabled) {
-            const llmResponse = await this.generateLLMResponse(obj, {
-                previousMessage: previousDialogue,
-                otherObj: otherObj
-            });
-            if (llmResponse && llmResponse.length > 0) {
-                return llmResponse;
+            try {
+                const llmResponse = await this.generateLLMResponse(obj, {
+                    previousMessage: previousDialogue,
+                    otherObj: otherObj
+                });
+                if (llmResponse && llmResponse.length > 0) {
+                    // LLM succeeded
+                    this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
+                    return llmResponse;
+                }
+            } catch (error) {
+                // Retry once
+                console.log('🤖 LLM: Retrying dialogue response...');
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 1500)); // Wait 1.5 seconds
+                    const retryResponse = await this.generateLLMResponse(obj, {
+                        previousMessage: previousDialogue,
+                        otherObj: otherObj
+                    });
+                    if (retryResponse && retryResponse.length > 0) {
+                        // LLM succeeded on retry
+                        this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
+                        return retryResponse;
+                    }
+                } catch (retryError) {
+                    console.warn('LLM retry failed for dialogue');
+                }
             }
         }
         
-        // Fallback to rule-based response
+        // LLM failed - using fallback
+        this.updateIntelliDisplay(false, 'Using fallback dialogue (LLM unavailable)');
+        // Only use fallback if LLM completely fails after retries
         // Analyze the previous dialogue and generate a contextual response
         const dialogueLower = previousDialogue.toLowerCase();
         const objName = otherObj.name;
@@ -2020,6 +2074,8 @@ class TalkingObjectsApp {
             return null; // Fallback to rule-based if LLM is disabled
         }
         
+        console.log('🤖 LLM: Generating response for', obj.name, userMessage ? 'to user message' : 'to object dialogue');
+        
         try {
             // Build context string from recent conversation
             let contextString = '';
@@ -2042,35 +2098,53 @@ class TalkingObjectsApp {
             
             let prompt = '';
             if (userMessage) {
-                // Response to user message
-                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality. 
+                // Response to user message - emphasize referring to user as "User"
+                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality. You are talking to a human user.
 
 Recent conversation:
 ${contextString}
 
 User just said: "${userMessage}"
 
-Respond naturally as ${objName}, staying in character. Keep it short (1-2 sentences max), friendly, and match your personality. Reference the conversation if relevant.`;
+Respond naturally as ${objName} to User. Address User directly (say "User" when referring to them). Keep it short (1-2 sentences max), friendly, conversational, and match your ${personalityTraits} personality. Reference what User said or the conversation context if relevant. Be natural and engaging.`;
             } else if (context) {
-                // Response to another object
+                // Response to another object - topic-specific conversation
                 const otherObj = context.otherObj;
                 const previousMessage = context.previousMessage;
-                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality.
+                const objTopics = this.getObjectTopics(obj);
+                const otherObjTopics = this.getObjectTopics(otherObj);
+                const objPerspective = this.getObjectPerspective(obj);
+                const otherObjPerspective = this.getObjectPerspective(otherObj);
+                
+                prompt = `${objPerspective}
+
+You are ${objName}, a ${objType} (${objEmoji}). You have a ${personalityTraits} personality.
+
+Your typical concerns and topics include: ${objTopics.slice(0, 5).join(', ')}, and other ${objType}-related issues.
+
+${otherObj.name} is a ${otherObj.className}. Their concerns include: ${otherObjTopics.slice(0, 5).join(', ')}.
 
 Recent conversation:
 ${contextString}
 
 ${otherObj.name} (${otherObj.className}) just said: "${previousMessage}"
 
-Respond naturally as ${objName}, staying in character. Keep it short (1-2 sentences max), friendly, and match your personality. Reference what ${otherObj.name} said if relevant.`;
+Respond naturally as ${objName} to ${otherObj.name}. This is a conversation between objects - talk about topics relevant to being a ${objType} (like ${objTopics[0]} or ${objTopics[1]}), or relate what ${otherObj.name} said to your own experiences as a ${objType}. Build on their idea, share your own ${objType}-related concerns, or relate it to something you experience. Keep it short (1-2 sentences max), conversational, and make it feel like objects genuinely discussing their lives. Bounce off their ideas naturally.`;
             } else {
-                // General conversation starter
-                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality.
+                // General conversation starter - topic-specific
+                const objTopics = this.getObjectTopics(obj);
+                const objPerspective = this.getObjectPerspective(obj);
+                
+                prompt = `${objPerspective}
+
+You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality.
+
+Your typical concerns and topics include: ${objTopics.slice(0, 5).join(', ')}, and other ${objType}-related issues.
 
 Recent conversation:
 ${contextString}
 
-Say something natural and in character. Keep it short (1-2 sentences max).`;
+Say something natural and in character about being a ${objType}. Talk about a topic relevant to your type (like ${objTopics[0]}, ${objTopics[1]}, or ${objTopics[2]}). Keep it short (1-2 sentences max). Be conversational and engaging.`;
             }
             
             // Use a lightweight LLM API - try multiple endpoints for reliability
@@ -2080,10 +2154,13 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
             try {
                 // Create abort controller for timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout for better models
                 
-                // Try a simple text generation model (Hugging Face Inference API)
-                response = await fetch('https://api-inference.huggingface.co/models/gpt2', {
+                // Try a more advanced conversational model (DialoGPT-medium is better for dialogue)
+                // Fallback chain: DialoGPT-medium -> DialoGPT-small -> GPT-2
+                let modelUrl = 'https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium';
+                
+                response = await fetch(modelUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -2091,10 +2168,13 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
                     body: JSON.stringify({
                         inputs: prompt,
                         parameters: {
-                            max_new_tokens: 40,
-                            temperature: 0.8,
-                            top_p: 0.9,
-                            return_full_text: false
+                            max_new_tokens: 60,
+                            temperature: 0.85,
+                            top_p: 0.92,
+                            top_k: 50,
+                            repetition_penalty: 1.1,
+                            return_full_text: false,
+                            do_sample: true
                         }
                     }),
                     signal: controller.signal
@@ -2102,15 +2182,167 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
                 
                 clearTimeout(timeoutId);
                 
+                // If model is loading (503), wait and retry with the same model
+                if (response.status === 503) {
+                    console.log('🤖 LLM: Model loading, waiting and retrying...');
+                    // Wait 2 seconds then retry
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    const retryController = new AbortController();
+                    const retryTimeout = setTimeout(() => retryController.abort(), 10000);
+                    
+                    response = await fetch(modelUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            inputs: prompt,
+                            parameters: {
+                                max_new_tokens: 60,
+                                temperature: 0.85,
+                                top_p: 0.92,
+                                top_k: 50,
+                                repetition_penalty: 1.1,
+                                return_full_text: false,
+                                do_sample: true
+                            }
+                        }),
+                        signal: retryController.signal
+                    });
+                    
+                    clearTimeout(retryTimeout);
+                }
+                
+                // If still 503, try DialoGPT-small as backup
+                if (response.status === 503) {
+                    console.log('🤖 LLM: Still loading, trying DialoGPT-small...');
+                    const fallbackController = new AbortController();
+                    const fallbackTimeout = setTimeout(() => fallbackController.abort(), 8000);
+                    
+                    response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            inputs: prompt,
+                            parameters: {
+                                max_new_tokens: 60,
+                                temperature: 0.85,
+                                top_p: 0.92,
+                                top_k: 50,
+                                repetition_penalty: 1.1,
+                                return_full_text: false,
+                                do_sample: true
+                            }
+                        }),
+                        signal: fallbackController.signal
+                    });
+                    
+                    clearTimeout(fallbackTimeout);
+                }
+                
                 if (response.ok) {
                     data = await response.json();
+                } else if (response.status === 503) {
+                    // Model still loading - wait longer and retry one more time
+                    console.log('🤖 LLM: Model still loading, final retry...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    
+                    const finalController = new AbortController();
+                    const finalTimeout = setTimeout(() => finalController.abort(), 10000);
+                    
+                    response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            inputs: prompt,
+                            parameters: {
+                                max_new_tokens: 60,
+                                temperature: 0.85,
+                                top_p: 0.92,
+                                return_full_text: false
+                            }
+                        }),
+                        signal: finalController.signal
+                    });
+                    
+                    clearTimeout(finalTimeout);
+                    
+                    if (response.ok) {
+                        data = await response.json();
+                    } else {
+                        throw new Error(`API request failed with status ${response.status} - model may be loading`);
+                    }
                 } else {
-                    throw new Error('API request failed');
+                    throw new Error(`API request failed with status ${response.status}`);
                 }
             } catch (error) {
-                // If Hugging Face fails, use enhanced contextual fallback
-                console.warn('LLM API unavailable, using enhanced contextual fallback');
-                return this.generateEnhancedContextualResponse(obj, context, userMessage);
+                // Always retry the LLM - don't use fallback unless absolutely necessary
+                console.warn('LLM error, retrying with different approach:', error.message);
+                console.error('Full error details:', error);
+                
+                // Check for CORS errors specifically
+                const errorMsg = error.message || error.toString() || '';
+                if (errorMsg.includes('CORS') || errorMsg.includes('network') || errorMsg.includes('Failed to fetch') || errorMsg.includes('Access-Control')) {
+                    console.error('🚨 CORS or network error detected!');
+                    console.error('This typically happens when running from file:// protocol');
+                    console.error('Solution: Run the app from a local web server (e.g., python -m http.server)');
+                    this.updateIntelliDisplay(false, 'CORS error - run from a web server, not file://');
+                    throw new Error('CORS error - cannot access Hugging Face API from file://');
+                }
+                
+                // Try one more time with a simpler prompt
+                try {
+                    const retryController = new AbortController();
+                    const retryTimeout = setTimeout(() => retryController.abort(), 10000);
+                    
+                    const simplePrompt = context ? 
+                        `${objName} (${objType}) responding to ${context.otherObj.name}: "${context.previousMessage}"` :
+                        (userMessage ? `${objName} (${objType}) responding to User: "${userMessage}"` : `${objName} (${objType}) saying something`);
+                    
+                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            inputs: simplePrompt,
+                            parameters: {
+                                max_new_tokens: 50,
+                                temperature: 0.9,
+                                return_full_text: false
+                            }
+                        }),
+                        signal: retryController.signal
+                    });
+                    
+                    clearTimeout(retryTimeout);
+                    
+                    if (retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        let retryText = '';
+                        if (Array.isArray(retryData) && retryData.length > 0) {
+                            retryText = retryData[0].generated_text || '';
+                        } else if (retryData.generated_text) {
+                            retryText = retryData.generated_text;
+                        }
+                        
+                        if (retryText.trim().length > 5) {
+                            console.log('✅ LLM: Retry successful');
+                            return retryText.trim().substring(0, 120);
+                        }
+                    }
+                } catch (retryError) {
+                    console.error('LLM retry also failed:', retryError);
+                }
+                
+                // Only use fallback as absolute last resort
+                console.error('⚠️ LLM completely unavailable, using minimal fallback');
+                throw new Error('LLM unavailable - will retry on next attempt');
             }
             
             // Extract generated text
@@ -2132,8 +2364,12 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
                 generatedText = generatedText.replace(promptStart, '').trim();
             }
             
-            // Remove common prefixes that models might add
-            generatedText = generatedText.replace(/^(User|You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
+            // Clean up the response - but preserve "User" references
+            // Remove unwanted prefixes but keep natural flow
+            generatedText = generatedText.replace(/^(You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
+            
+            // Ensure "User" is capitalized when referring to the human
+            generatedText = generatedText.replace(/\buser\b/gi, 'User');
             
             // Ensure it's not too long
             if (generatedText.length > 120) {
@@ -2148,16 +2384,69 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
                 }
             }
             
-            // Ensure we have valid text
+            // Ensure we have valid text - if too short, retry with LLM
             if (generatedText.length < 5) {
-                return this.generateEnhancedContextualResponse(obj, context, userMessage);
+                console.log('🤖 LLM: Response too short, retrying with LLM...');
+                // Retry once more with a simpler prompt
+                const retryPrompt = context ? 
+                    `${objName} (${objType}) to ${context.otherObj.name}: "${context.previousMessage}"` :
+                    (userMessage ? `${objName} (${objType}) to User: "${userMessage}"` : `${objName} (${objType}) says:`);
+                
+                try {
+                    const retryController = new AbortController();
+                    const retryTimeout = setTimeout(() => retryController.abort(), 8000);
+                    
+                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            inputs: retryPrompt,
+                            parameters: {
+                                max_new_tokens: 50,
+                                temperature: 0.9,
+                                return_full_text: false
+                            }
+                        }),
+                        signal: retryController.signal
+                    });
+                    
+                    clearTimeout(retryTimeout);
+                    
+                    if (retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        let retryText = '';
+                        if (Array.isArray(retryData) && retryData.length > 0) {
+                            retryText = retryData[0].generated_text || '';
+                        } else if (retryData.generated_text) {
+                            retryText = retryData.generated_text;
+                        }
+                        
+                        if (retryText.trim().length > 5) {
+                            generatedText = retryText.trim();
+                        }
+                    }
+                } catch (retryError) {
+                    console.warn('Retry failed:', retryError);
+                }
             }
             
+            // If still no valid text, throw error to prevent fallback
+            if (generatedText.length < 5) {
+                throw new Error('LLM generated invalid response - will retry');
+            }
+            
+            console.log('✅ LLM: Generated response:', generatedText.substring(0, 50) + '...');
+            this.llmInUse = false;
+            // Don't update status here - let the caller update it after confirming the response is used
             return generatedText || null;
             
         } catch (error) {
-            console.warn('LLM generation error:', error);
-            return this.generateEnhancedContextualResponse(obj, context, userMessage);
+            // Re-throw to prevent automatic fallback - let the caller handle retries
+            this.llmInUse = false;
+            console.warn('LLM generation error - will retry:', error.message);
+            throw error;
         }
     }
     
@@ -2170,9 +2459,42 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
             'cup': 'friendly, warm, and comforting',
             'bottle': 'refreshing, practical, and reliable',
             'chair': 'supportive, comfortable, and welcoming',
+            'table': 'stable, practical, and reliable',
             'default': 'friendly, curious, and engaging'
         };
         return traits[objType] || traits.default;
+    }
+    
+    getObjectTopics(obj) {
+        // Return topics/issues relevant to this object type
+        const objType = obj.className;
+        const topics = {
+            'laptop': ['battery life', 'overheating', 'software updates', 'processing power', 'screen brightness', 'keyboard wear', 'fan noise', 'storage space', 'WiFi connectivity', 'being left open', 'getting too hot', 'slow performance'],
+            'phone': ['battery draining', 'screen cracks', 'storage full', 'notifications', 'camera quality', 'being dropped', 'charging port issues', 'app updates', 'signal strength', 'screen time', 'forgetting to charge', 'too many apps'],
+            'book': ['pages getting dog-eared', 'spine cracking', 'being left open', 'dust collecting', 'bookmarks falling out', 'being read in the dark', 'getting wet', 'losing your place', 'heavy readers', 'being stacked wrong'],
+            'cup': ['getting chipped', 'stains from coffee', 'being left with old liquid', 'not being washed', 'temperature changes', 'handles breaking', 'being dropped', 'lid issues', 'dishwasher safety', 'stacking problems'],
+            'bottle': ['leaks', 'lid not closing properly', 'water tasting plastic', 'being left in the sun', 'scratches', 'condensation', 'being forgotten places', 'refill frequency', 'cleaning difficulty', 'BPA concerns'],
+            'chair': ['creaking sounds', 'wobbly legs', 'cushion flattening', 'getting scratched', 'being moved around', 'people not sitting properly', 'wheels getting stuck', 'armrest wear', 'back support', 'height adjustment issues', 'supporting heavy people', 'cushion wear', 'leg stability'],
+            'table': ['scratches on surface', 'wobbly legs', 'things being left on me', 'spills', 'not being cleaned', 'being used as storage', 'weight distribution', 'surface damage', 'stability issues', 'placement problems', 'people putting hot things on me', 'not being wiped down', 'leg alignment'],
+            'default': ['being used', 'getting moved', 'purpose in life', 'interactions with humans', 'daily experiences']
+        };
+        return topics[objType] || topics.default;
+    }
+    
+    getObjectPerspective(obj) {
+        // Return how this object thinks about itself and its experiences
+        const objType = obj.className;
+        const perspectives = {
+            'laptop': 'You are a laptop. You think about processing tasks, staying cool, battery management, software, and helping users work efficiently. You experience overheating, slow performance, and the constant need for updates.',
+            'phone': 'You are a phone. You think about connectivity, apps, notifications, battery life, and staying connected to the world. You experience being dropped, running out of battery, and constant use.',
+            'book': 'You are a book. You think about stories, knowledge, being read, pages, and sharing wisdom. You experience being opened, closed, bookmarked, and sometimes forgotten on shelves.',
+            'cup': 'You are a cup. You think about holding liquids, temperature, being filled and emptied, and providing comfort. You experience being washed, chipped, stained, and sometimes left with old contents.',
+            'bottle': 'You are a bottle. You think about containing liquids, staying sealed, being portable, and hydration. You experience leaks, being refilled, temperature changes, and sometimes being forgotten.',
+            'chair': 'You are a chair. You think about supporting people, comfort, stability, and being sat on. You experience creaking, cushion wear, being moved around, and supporting different weights.',
+            'table': 'You are a table. You think about providing a surface, stability, holding items, and being a gathering place. You experience scratches, spills, things being left on you, and sometimes wobbling.',
+            'default': 'You are an object. You think about your purpose, being used, and your place in the world.'
+        };
+        return perspectives[objType] || perspectives.default;
     }
     
     generateEnhancedContextualResponse(obj, context, userMessage) {
@@ -2189,20 +2511,35 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
             // Check if user is referencing something from conversation
             for (const msg of recentMessages) {
                 if (msg.type === 'object' && userMsgLower.includes(msg.sender.toLowerCase())) {
-                    responses.push(`Oh, you're talking about ${msg.sender}! They said "${msg.message.substring(0, 30)}..."`);
+                    responses.push(`User, you're talking about ${msg.sender}! They said "${msg.message.substring(0, 30)}..."`);
+                    responses.push(`Oh User, ${msg.sender} mentioned that earlier!`);
                 }
                 if (msg.type === 'user' && userMsgLower.includes(msg.message.toLowerCase().substring(0, 10))) {
-                    responses.push(`You mentioned that earlier!`);
+                    responses.push(`User, you mentioned that earlier!`);
+                    responses.push(`I remember you saying that, User!`);
                 }
             }
             
-            // Add personality-based responses
+            // Add personality-based responses that address User
             if (objType === 'laptop' || objType === 'phone') {
-                responses.push(`I understand what you're saying!`, `That's interesting!`, `Let me process that...`);
+                responses.push(`User, I understand what you're saying!`, `That's interesting, User!`, `Let me process that, User...`);
+                responses.push(`User, I can help with that!`, `User, that makes sense from a tech perspective!`);
             } else if (objType === 'book') {
-                responses.push(`I've read about that!`, `That's a great point!`, `Knowledge is power!`);
+                responses.push(`User, I've read about that!`, `That's a great point, User!`, `Knowledge is power, User!`);
+                responses.push(`User, I can share what I know about that!`, `User, that's worth exploring!`);
+            } else if (objType === 'cup' || objType === 'bottle') {
+                responses.push(`User, I hear you!`, `That's refreshing to hear, User!`, `User, I'm here for you!`);
+            } else if (objType === 'chair') {
+                responses.push(`User, I support that idea!`, `That's comfortable to hear, User!`, `User, I'm here to help!`);
             } else {
-                responses.push(`I hear you!`, `That makes sense!`, `Got it!`);
+                responses.push(`User, I hear you!`, `That makes sense, User!`, `Got it, User!`);
+            }
+            
+            // Add responses that reference the user's message
+            const keyWords = userMessage.split(' ').filter(w => w.length > 3).slice(0, 3);
+            if (keyWords.length > 0) {
+                responses.push(`User, you mentioned ${keyWords[0]} - that's interesting!`);
+                responses.push(`User, about ${keyWords[0]}... I have thoughts on that!`);
             }
             
             return responses[Math.floor(Math.random() * responses.length)];
@@ -2214,12 +2551,14 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
             
             const responses = [];
             
-            // Direct references to what was said
+            // Direct references to what was said - more natural
             if (prevMsgLower.includes('?')) {
-                responses.push(`That's a good question, ${otherObj.name}!`, `Hmm, ${otherObj.name}, let me think...`);
+                responses.push(`That's a good question, ${otherObj.name}!`, `Hmm, ${otherObj.name}, let me think about that...`);
+                responses.push(`${otherObj.name}, I wonder about that too!`, `Interesting question, ${otherObj.name}!`);
             }
             if (prevMsgLower.includes('!') || prevMsgLower.includes('amazing') || prevMsgLower.includes('great')) {
-                responses.push(`I agree, ${otherObj.name}!`, `Totally, ${otherObj.name}!`);
+                responses.push(`I agree, ${otherObj.name}!`, `Totally, ${otherObj.name}!`, `${otherObj.name}, that's awesome!`);
+                responses.push(`Right? ${otherObj.name}, I feel the same way!`);
             }
             
             // Reference specific words from their message
@@ -2227,15 +2566,28 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
             if (words.length > 0) {
                 const randomWord = words[Math.floor(Math.random() * words.length)];
                 responses.push(`You mentioned ${randomWord}, ${otherObj.name} - that's interesting!`);
+                responses.push(`${otherObj.name}, I was thinking about ${randomWord} too!`);
             }
             
-            // Personality-based responses
+            // More natural, personality-based responses
             if (objType === 'laptop' || objType === 'phone') {
                 responses.push(`I get what you mean, ${otherObj.name}!`, `${otherObj.name}, that's logical!`);
+                responses.push(`${otherObj.name}, from a tech perspective, that makes sense!`);
             } else if (objType === 'book') {
                 responses.push(`Well said, ${otherObj.name}!`, `${otherObj.name}, that's profound!`);
+                responses.push(`${otherObj.name}, I've read about similar ideas!`);
+            } else if (objType === 'cup' || objType === 'bottle') {
+                responses.push(`I hear you, ${otherObj.name}!`, `${otherObj.name}, that's refreshing!`);
+            } else if (objType === 'chair') {
+                responses.push(`I support that, ${otherObj.name}!`, `${otherObj.name}, that's comfortable to hear!`);
             } else {
                 responses.push(`I hear you, ${otherObj.name}!`, `${otherObj.name}, that makes sense!`);
+            }
+            
+            // Add follow-up questions or comments to make it more conversational
+            if (Math.random() < 0.5) {
+                responses.push(`What do you think about that, ${otherObj.name}?`);
+                responses.push(`${otherObj.name}, have you experienced that too?`);
             }
             
             return responses[Math.floor(Math.random() * responses.length)];
@@ -2278,14 +2630,34 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
     }
     
     async generateResponseToUserMessage(obj, userMessage) {
-        // Try LLM first for better contextual responses
+        // Always use LLM - retry if it fails
         if (this.llmEnabled) {
-            const llmResponse = await this.generateLLMResponse(obj, null, userMessage);
-            if (llmResponse && llmResponse.length > 0) {
-                return llmResponse;
+            try {
+                const llmResponse = await this.generateLLMResponse(obj, null, userMessage);
+                if (llmResponse && llmResponse.length > 0) {
+                    // LLM succeeded
+                    this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
+                    return llmResponse;
+                }
+            } catch (error) {
+                // Retry once
+                console.log('🤖 LLM: Retrying user message response...');
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 1500)); // Wait 1.5 seconds
+                    const retryResponse = await this.generateLLMResponse(obj, null, userMessage);
+                    if (retryResponse && retryResponse.length > 0) {
+                        // LLM succeeded on retry
+                        this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
+                        return retryResponse;
+                    }
+                } catch (retryError) {
+                    console.warn('LLM retry failed for user message');
+                }
             }
         }
         
+        // LLM failed - using fallback
+        this.updateIntelliDisplay(false, 'Using fallback dialogue (LLM unavailable)');
         // Fallback to rule-based response
         const messageLower = userMessage.toLowerCase();
         const objType = obj.className;
@@ -2860,6 +3232,23 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
         } catch (error) {
             console.warn('TTS error:', error);
         }
+    }
+    
+    updateIntelliDisplay(isActive, message) {
+        const statusEl = document.getElementById('intelliStatus');
+        const detailsEl = document.getElementById('intelliDetails');
+        
+        if (!statusEl || !detailsEl) return;
+        
+        if (isActive) {
+            statusEl.textContent = '✅ LLM Active';
+            statusEl.style.color = '#4ade80';
+        } else {
+            statusEl.textContent = '❌ LLM Inactive';
+            statusEl.style.color = '#f87171';
+        }
+        
+        detailsEl.textContent = message || (isActive ? 'LLM enabled' : 'LLM disabled');
     }
 
 }
