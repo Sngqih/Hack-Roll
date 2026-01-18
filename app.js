@@ -2128,6 +2128,8 @@ class TalkingObjectsApp {
             const personalityTraits = this.getPersonalityTraits(obj);
             
             let prompt = '';
+            const toneGuardrails = 'Use a sarcastic, slightly unhinged tone but keep it PG-13 (no profanity or explicit content).';
+            
             if (userMessage) {
                 // Response to user message - emphasize referring to user as "User"
                 prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality. You are talking to a human user.
@@ -2137,7 +2139,7 @@ ${contextString}
 
 User just said: "${userMessage}"
 
-Respond naturally as ${objName} to User. Address User directly (say "User" when referring to them). Keep it short (1-2 sentences max), friendly, conversational, and match your ${personalityTraits} personality. Reference what User said or the conversation context if relevant. Be natural and engaging.`;
+Respond naturally as ${objName} to User. Address User directly (say "User" when referring to them). ${toneGuardrails} Keep it short (1-2 sentences max), conversational, and match your ${personalityTraits} personality. Reference what User said or the conversation context if relevant. Be natural and engaging.`;
             } else if (context) {
                 // Response to another object - topic-specific conversation
                 const otherObj = context.otherObj;
@@ -2160,7 +2162,7 @@ ${contextString}
 
 ${otherObj.name} (${otherObj.className}) just said: "${previousMessage}"
 
-Respond naturally as ${objName} to ${otherObj.name}. This is a conversation between objects - talk about topics relevant to being a ${objType} (like ${objTopics[0]} or ${objTopics[1]}), or relate what ${otherObj.name} said to your own experiences as a ${objType}. Build on their idea, share your own ${objType}-related concerns, or relate it to something you experience. Keep it short (1-2 sentences max), conversational, and make it feel like objects genuinely discussing their lives. Bounce off their ideas naturally.`;
+Respond naturally as ${objName} to ${otherObj.name}. This is a conversation between objects - talk about topics relevant to being a ${objType} (like ${objTopics[0]} or ${objTopics[1]}), or relate what ${otherObj.name} said to your own experiences as a ${objType}. ${toneGuardrails} Build on their idea, share your own ${objType}-related concerns, or relate it to something you experience. Keep it short (1-2 sentences max), conversational, and make it feel like objects genuinely discussing their lives. Bounce off their ideas naturally.`;
             } else {
                 // General conversation starter - topic-specific
                 const objTopics = this.getObjectTopics(obj);
@@ -2175,7 +2177,7 @@ Your typical concerns and topics include: ${objTopics.slice(0, 5).join(', ')}, a
 Recent conversation:
 ${contextString}
 
-Say something natural and in character about being a ${objType}. Talk about a topic relevant to your type (like ${objTopics[0]}, ${objTopics[1]}, or ${objTopics[2]}). Keep it short (1-2 sentences max). Be conversational and engaging.`;
+Say something natural and in character about being a ${objType}. Talk about a topic relevant to your type (like ${objTopics[0]}, ${objTopics[1]}, or ${objTopics[2]}). ${toneGuardrails} Keep it short (1-2 sentences max). Be conversational and engaging.`;
             }
             
             // Try Ollama first if configured (in 'ollama' or 'auto' mode)
