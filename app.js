@@ -340,6 +340,14 @@ class TalkingObjectsApp {
         }
         
         this.video.srcObject = null;
+        
+        // Remove all speech bubbles
+        this.objects.forEach(obj => {
+            if (obj.speechBubble) {
+                obj.speechBubble.remove();
+            }
+        });
+        
         this.objects.clear();
         this.updateObjectsDisplay();
         this.clearOverlay();
@@ -460,19 +468,43 @@ class TalkingObjectsApp {
     }
     
     generateObjectName(className) {
-        const names = {
-            'person': ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'],
-            'laptop': ['Compy', 'Techy', 'Byte', 'Chip', 'Pixel'],
-            'phone': ['Phony', 'Dialer', 'Callie', 'Siri', 'Droid'],
-            'book': ['Story', 'Reader', 'Page', 'Novel', 'Chapter'],
-            'cup': ['Muggy', 'Cuppy', 'Tea Time', 'Java', 'Espresso'],
-            'bottle': ['Aqua', 'H2O', 'Flow', 'Liquid', 'Bubbly'],
-            'chair': ['Seaty', 'Comfy', 'Rest', 'Stool', 'Bench'],
-            'default': ['Buddy', 'Friend', 'Pal', 'Chum', 'Mate']
+        // Curated funny names for known objects
+        const knownNames = {
+            'person': ['Humanity', 'Personnes', 'Humandi', 'Soulian', 'Humanley'],
+            'laptop': ['Bytetrice', 'Codrian', 'Keyvan', 'Pixelia', 'Bytesworth', 'Screenworth', 'Keyworth'],
+            'phone': ['Ringaldo', 'Callista', 'Textopher', 'Signalina', 'Dialina', 'Textley'],
+            'book': ['Storytella', 'Pagerina', 'Readrick', 'Chapterin', 'Storyley', 'Pageton'],
+            'cup': ['Teaffony', 'Muggie', 'Brewson', 'Sipporah', 'Cupella', 'Steemia', 'Mugette', 'Sipley', 'Brewella'],
+            'bottle': ['Siphora', 'Caprice', 'Liquidrian', 'Pourcil', 'Sealbert', 'Corking', 'Plastina', 'Capstone', 'Pourley', 'Sealton'],
+            'chair': ['Sittany', 'Restopher', 'Comfrey', 'Seaton', 'Legolas', 'Cushbert', 'Backston', 'Sitwell', 'Restwood', 'Legston'],
+            'couch': ['Sofara', 'Relaxandra', 'Couchel', 'Cushelia', 'Loungevin', 'Recliney', 'Velvetra', 'Loungeworth', 'Cushworth', 'Sofaton'],
+            'keyboard': ['Keyvan', 'Boardney', 'Typeona', 'Qwertan', 'Enterina', 'Spacera', 'Typeworth', 'Enterston', 'Keyworth'],
+            'mouse': ['Clickson', 'Scrolliam', 'Cursorina', 'Dragston', 'Padworth', 'Scrollia', 'Scrollworth', 'Pointston', 'Clickton'],
+            'backpack': ['Packson', 'Carrlos', 'Strapina', 'Zipiah', 'Journeya', 'Shoulderton', 'Bagrick', 'Pacleton', 'Strapworth', 'Journeyston'],
+            'umbrella': ['Rainas', 'Sheltrina', 'Parabella', 'Canopya', 'Shieldon', 'Weatherley', 'Parasol', 'Rainton', 'Sheltworth', 'Weatherton'],
+            'handbag': ['Baggiana', 'Carryssa', 'Glamma', 'Pursela', 'Stylena', 'Fashionetta', 'Zippiola', 'Bagston', 'Styletto', 'Pursetta'],
+            'tie': ['Knottiam', 'Neckston', 'Formalina', 'Windsorina', 'Neckolas', 'Silkford', 'Stripolis', 'Knottworth', 'Neckwell', 'Silkton'],
+            'suitcase': ['Travelin', 'Journeya', 'Luggino', 'Tripton', 'Voyagio', 'Wheelston', 'Carryon', 'Travelworth', 'Luggton', 'Tripleton'],
+            'frisbee': ['Discelia', 'Flightley', 'Soarina', 'Throwbert', 'Spinney', 'Airlington', 'Coastward', 'Discworth', 'Throwston', 'Spinley'],
+            'sports_ball': ['Kickory', 'Scoreina', 'Gameson', 'Ballissa', 'Playden', 'Bouncelton', 'Kickila', 'Ballton', 'Kickworth', 'Scoreley'],
+            'kite': ['Skylar', 'Windney', 'Stringham', 'Flysabel', 'Floatina', 'Airelson', 'Zephyrin', 'Skyworth', 'Windston', 'Stringwell'],
+            'baseball_bat': ['Batrick', 'Swington', 'Slugmore', 'Homerunny', 'Crackton', 'Strikeford', 'Swindle', 'Swingworth', 'Batstone', 'Strikewell'],
+            'skateboard': ['Deckson', 'Tricktor', 'Grindley', 'Railston', 'Shredrick', 'Wheeliam', 'Kickflip', 'Trickston', 'Grindworth', 'Railley'],
+            'surfboard': ['Waverly', 'Ridley', 'Crestina', 'Hangifer', 'Tubiana', 'Tuberina', 'Tidesworth', 'Wavewell', 'Tubeworth', 'Tideston'],
+            'tennis_racket': ['Aceson', 'Servena', 'Rackton', 'Stringley', 'Volleyanna', 'Netting', 'Courtney', 'Stringworth', 'Servington', 'Netwell']
         };
         
-        const nameList = names[className] || names.default;
-        return nameList[Math.floor(Math.random() * nameList.length)];
+        // Regular names for unknown/default objects
+        const regularNames = ['Patrick', 'Sarah', 'James', 'Emma', 'Michael', 'Olivia', 'David', 'Sophia', 'Robert', 'Ava', 'Daniel', 'Isabella', 'Matthew', 'Mia', 'Joseph', 'Charlotte', 'Christopher', 'Amelia', 'Andrew', 'Harper'];
+        
+        // If we have a curated name, use it; otherwise use regular names for unknown objects
+        if (knownNames[className]) {
+            const nameList = knownNames[className];
+            return nameList[Math.floor(Math.random() * nameList.length)];
+        } else {
+            // For unknown objects, use regular names
+            return regularNames[Math.floor(Math.random() * regularNames.length)];
+        }
     }
     
     triggerConversations() {
@@ -808,6 +840,9 @@ class TalkingObjectsApp {
 
     // PokéDex Methods
     recordItemInPokedex(className) {
+        // Don't record people in PokéDex
+        if (className === 'person') return;
+        
         if (!this.pokedex.has(className)) {
             this.pokedex.set(className, {
                 className,
@@ -826,17 +861,14 @@ class TalkingObjectsApp {
 
     updatePokedexDisplay() {
         const pokedexList = document.getElementById('pokedexList');
-        const captureCount = document.getElementById('captureCount');
         
         pokedexList.innerHTML = '';
-        let totalCount = 0;
         
         // Sort by first seen (oldest first)
         const sorted = Array.from(this.pokedex.values())
             .sort((a, b) => new Date(a.firstSeen) - new Date(b.firstSeen));
         
         sorted.forEach((item, index) => {
-            totalCount += item.count;
             const itemEl = document.createElement('div');
             itemEl.className = 'pokedex-item';
             itemEl.innerHTML = `
@@ -851,8 +883,6 @@ class TalkingObjectsApp {
             `;
             pokedexList.appendChild(itemEl);
         });
-        
-        captureCount.textContent = totalCount;
     }
 
     savePokedexToStorage() {
@@ -900,15 +930,22 @@ class TalkingObjectsApp {
             });
             
             // Generate zip and download
-            const blob = await zip.generateAsync({ type: 'blob' });
+            const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.href = url;
-            link.download = `pokedex_${new Date().toISOString().split('T')[0]}.zip`;
+            link.setAttribute('href', url);
+            link.setAttribute('download', `pokedex_${new Date().toISOString().split('T')[0]}.zip`);
+            link.style.display = 'none';
             document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            
+            setTimeout(() => {
+                link.click();
+            }, 100);
+            
+            setTimeout(() => {
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }, 500);
             
             console.log('PokéDex downloaded successfully');
         } catch (error) {
