@@ -3356,16 +3356,43 @@ Say something natural and in character about being a ${objType}. Talk about a to
             // DistilGPT-2 is a lightweight model that runs well in browsers (~250MB)
             console.log('📦 Importing Transformers.js...');
             
-            // Import the module
-            const transformersModule = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0');
-            
-            // Check if pipeline is available
-            if (!transformersModule || !transformersModule.pipeline) {
-                throw new Error('Transformers.js pipeline not found in module');
+            // Import the module - wrap in try-catch to handle module loading issues
+            let transformersModule;
+            try {
+                // Use a fresh import to avoid any caching issues
+                transformersModule = await import(
+                    'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0' + 
+                    '?t=' + Date.now() // Cache busting
+                );
+            } catch (importErr) {
+                console.error('Transformers.js import failed:', importErr);
+                throw new Error(`Failed to import Transformers.js: ${importErr.message}`);
             }
             
-            // Get the pipeline function
-            const pipelineFn = transformersModule.pipeline;
+            // Debug: log what we got
+            console.log('Transformers module keys:', Object.keys(transformersModule || {}));
+            
+            // Check if module loaded correctly
+            if (!transformersModule) {
+                throw new Error('Transformers.js module is undefined after import');
+            }
+            
+            // Try different ways to access pipeline
+            let pipelineFn = null;
+            if (transformersModule.pipeline && typeof transformersModule.pipeline === 'function') {
+                pipelineFn = transformersModule.pipeline;
+            } else if (transformersModule.default) {
+                if (transformersModule.default.pipeline && typeof transformersModule.default.pipeline === 'function') {
+                    pipelineFn = transformersModule.default.pipeline;
+                } else if (typeof transformersModule.default === 'function') {
+                    pipelineFn = transformersModule.default;
+                }
+            }
+            
+            if (!pipelineFn || typeof pipelineFn !== 'function') {
+                console.error('Available exports:', Object.keys(transformersModule));
+                throw new Error('Pipeline function not found or not callable in Transformers.js module');
+            }
             
             console.log('🤖 Creating text-generation pipeline...');
             this.localLLM = await pipelineFn(
