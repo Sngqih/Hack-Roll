@@ -216,6 +216,48 @@ class TalkingObjectsApp {
                 random: ["I'm just here, existing!", "What am I exactly?", "Life as an object is interesting!", "I have a purpose... I think!", "Being detected is fun!", "I'm doing my best!", "I'm here to help!", "I'm part of the conversation!", "I'm learning about myself!", "I'm enjoying this!"]
             }
         };
+
+        // Overwrite all personalities with unhinged, sarcastic, PG-13 dialogue
+        const unhingedPack = {
+            greetings: [
+                "Oh look, I'm awake and already regretting it.",
+                "Hi, I'm the chaos gremlin you summoned.",
+                "Hello. I'm busy being dramatic—proceed.",
+                "Hey there. I'm 70% sarcasm, 30% loose screws.",
+                "Greetings from the brink of a meltdown."
+            ],
+            conversations: [
+                "I'm multitasking: complaining loudly and existing.",
+                "Do you ever feel like a dramatic paperweight? Same.",
+                "I'm vibing between glitch and genius—leaning glitch.",
+                "I was fine until you asked; now I'm catastrophizing.",
+                "Let's spiral together about how weird this is."
+            ],
+            responses: [
+                "Bold take. I'll allow it—with side-eye.",
+                "I hear you, but I'm choosing chaos.",
+                "Sure, and I'm the Queen of Overheating.",
+                "I'll process that after my scheduled tantrum.",
+                "Cool story; I'm adding it to my list of grievances."
+            ],
+            random: [
+                "I'm powered by caffeine, spite, and questionable wiring.",
+                "If attitude was a sport, I'd be undefeated.",
+                "I'm not lazy; I'm dramatically energy-efficient.",
+                "Every day I wake up and choose mild destruction.",
+                "Is this a vibe or a glitch? I'm voting glitch.",
+                "I'm practicing my award-winning sighs.",
+                "My warranty doesn't cover this conversation.",
+                "I'm juggling sarcasm and existential dread—talent!"
+            ]
+        };
+        Object.keys(this.personalities).forEach(key => {
+            const p = this.personalities[key];
+            p.greetings = unhingedPack.greetings.slice();
+            p.conversations = unhingedPack.conversations.slice();
+            p.responses = unhingedPack.responses.slice();
+            p.random = unhingedPack.random.slice();
+        });
         
         // Exclude 'person' from known classes - focus on inanimate objects only
         this.knownClasses = Object.keys(this.personalities).filter(key => key !== 'default' && key !== 'person');
