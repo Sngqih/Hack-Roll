@@ -2203,7 +2203,8 @@ Say something natural and in character about being a ${objType}. Talk about a to
                         generatedText = result;
                     }
                     
-                    console.log('🤖 Extracted generated text:', generatedText.substring(0, 100));
+                    console.log('🤖 Extracted generated text (raw):', generatedText.substring(0, 150));
+                    console.log('🤖 Prompt start (first 100 chars):', prompt.substring(0, 100));
                     
                     // Clean up the response
                     generatedText = generatedText.trim();
@@ -2212,27 +2213,72 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     // Try multiple strategies to remove the prompt
                     const promptLower = prompt.toLowerCase();
                     const generatedLower = generatedText.toLowerCase();
+                    const originalGeneratedText = generatedText; // Keep for comparison
                     
                     // Strategy 1: If generated text starts with prompt, remove it
-                    if (generatedLower.startsWith(promptLower.substring(0, Math.min(100, promptLower.length)))) {
-                        generatedText = generatedText.substring(prompt.length).trim();
+                    const promptPrefix = promptLower.substring(0, Math.min(150, promptLower.length));
+                    if (generatedLower.startsWith(promptPrefix)) {
+                        generatedText = generatedText.substring(promptPrefix.length).trim();
+                        console.log('🤖 Removed prompt prefix (Strategy 1)');
                     }
                     // Strategy 2: Find and remove prompt if it appears early in the text
                     else {
-                        const promptStart = prompt.substring(0, 50).toLowerCase();
-                        const promptIndex = generatedLower.indexOf(promptStart);
-                        if (promptIndex >= 0 && promptIndex < 100) {
-                            generatedText = generatedText.substring(promptIndex + promptStart.length).trim();
+                        // Try multiple prompt prefixes of different lengths
+                        for (let len = 100; len >= 30; len -= 10) {
+                            const promptStart = promptLower.substring(0, len);
+                            const promptIndex = generatedLower.indexOf(promptStart);
+                            if (promptIndex >= 0 && promptIndex < 150) {
+                                generatedText = generatedText.substring(promptIndex + len).trim();
+                                console.log(`🤖 Removed prompt from position ${promptIndex} (Strategy 2, len=${len})`);
+                                break;
+                            }
                         }
                     }
                     
-                    // Strategy 3: Remove common prompt patterns
+                    // Strategy 3: Remove common prompt patterns and fragments
+                    // Remove "You are [name], a [type] (emoji) with a [trait] personality" patterns
+                    generatedText = generatedText.replace(/^[^.!?]*?\([^\s)]+\)\s+with\s+a\s+[^.!?]*?personality[^.!?]*?[.!?\s]*/i, '').trim();
+                    // Remove "You are..." patterns
                     generatedText = generatedText.replace(/^You are .+?\.\s*/i, '').trim();
+                    // Remove "Say something..." patterns
                     generatedText = generatedText.replace(/^Say something .+?\.\s*/i, '').trim();
+                    // Remove fragments like "(emoji) with a friendly, curious..." that come from prompts
+                    generatedText = generatedText.replace(/^\([^\s)]+\)\s+with\s+a\s+[^.!?]*?[.!?\s]*/i, '').trim();
+                    
+                    // Strategy 4: If the generated text still looks like a prompt fragment, try to find the actual response
+                    // Look for common response indicators (question marks, exclamations, or sentences starting with I/We/They)
+                    if (generatedText.length > 20 && generatedLower.length > 20) {
+                        const responsePatterns = [
+                            /(?:^|[.!?]\s+)([A-Z][^.!?]{10,}[.!?])/g,
+                            /(?:^|\s+)(I|We|They|This|That|Here|There|You know|Actually|Well|Oh|Hmm|Hah)[\s,]/i
+                        ];
+                        
+                        let bestMatch = '';
+                        for (const pattern of responsePatterns) {
+                            const matches = generatedText.match(pattern);
+                            if (matches && matches.length > 0) {
+                                const matchIndex = generatedText.search(pattern);
+                                if (matchIndex >= 0 && matchIndex < generatedText.length / 2) {
+                                    bestMatch = generatedText.substring(matchIndex).trim();
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (bestMatch && bestMatch.length > 10) {
+                            generatedText = bestMatch;
+                            console.log('🤖 Extracted response using pattern matching (Strategy 4)');
+                        }
+                    }
                     
                     // Clean up the response - but preserve "User" references
                     generatedText = generatedText.replace(/^(You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
                     generatedText = generatedText.replace(/\buser\b/gi, 'User');
+                    
+                    // Log the cleaned text for debugging
+                    if (generatedText !== originalGeneratedText) {
+                        console.log('🤖 Generated text after cleaning:', generatedText.substring(0, 100));
+                    }
                     
                     // Ensure it's not too long
                     if (generatedText.length > 120) {
