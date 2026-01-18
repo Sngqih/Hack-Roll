@@ -2281,9 +2281,40 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     // Remove fragments like "(emoji) with a friendly, curious..." that come from prompts
                     generatedText = generatedText.replace(/^\([^\s)]+\)\s+with\s+a\s+[^.!?]*?[.!?\s]*/i, '').trim();
                     
+                    // Strategy 3.5: Remove instruction patterns that LLM might output verbatim
+                    // Remove instruction phrases (these are from the prompt, not the response)
+                    const instructionPatterns = [
+                        /Address User directly \(say "User" when referring to them\)\.\s*/gi,
+                        /say "User" when referring to them\.\s*/gi,
+                        /Keep it short \(1-2 sentences max\)[^.!?]*?[.!?\s]*/gi,
+                        /Keep it short \(1-2 sentences max\)\.\s*/gi,
+                        /Be conversational and engaging\.\s*/gi,
+                        /Be natural and engaging\.\s*/gi,
+                        /Respond naturally as [^.!?]+ to User\.\s*/gi,
+                        /Respond naturally as [^.!?]+ to [^.!?]+\.\s*/gi,
+                        /Reference what User said or the conversation context if relevant\.\s*/gi,
+                        /Reference what [^.!?]+ said or the conversation context if relevant\.\s*/gi,
+                        /Match your [^.!?]+ personality\.\s*/gi,
+                        /This is a conversation between objects[^.!?]*?[.!?\s]*/gi,
+                        /Talk about topics relevant to [^.!?]*?[.!?\s]*/gi,
+                        /Build on their idea[^.!?]*?[.!?\s]*/gi,
+                        /Share your own [^.!?]+-related concerns[^.!?]*?[.!?\s]*/gi,
+                        /Relate it to something you experience[^.!?]*?[.!?\s]*/gi,
+                        /Make it feel like objects genuinely discussing their lives\.\s*/gi,
+                        /Bounce off their ideas naturally\.\s*/gi,
+                        /Talk about a topic relevant to your type[^.!?]*?[.!?\s]*/gi
+                    ];
+                    
+                    for (const pattern of instructionPatterns) {
+                        generatedText = generatedText.replace(pattern, '').trim();
+                    }
+                    
+                    // Remove any remaining instruction-like fragments
+                    generatedText = generatedText.replace(/^\s*(Address|Keep|Be|Respond|Reference|Match|Talk|Build|Share|Relate|Make|Bounce)[^.!?]*?[.!?\s]+/i, '').trim();
+                    
                     // Strategy 4: If the generated text still looks like a prompt fragment, try to find the actual response
                     // Look for common response indicators (question marks, exclamations, or sentences starting with I/We/They)
-                    if (generatedText.length > 20 && generatedLower.length > 20) {
+                    if (generatedText.length > 20) {
                         const responsePatterns = [
                             /(?:^|[.!?]\s+)([A-Z][^.!?]{10,}[.!?])/g,
                             /(?:^|\s+)(I|We|They|This|That|Here|There|You know|Actually|Well|Oh|Hmm|Hah)[\s,]/i
@@ -2305,6 +2336,38 @@ Say something natural and in character about being a ${objType}. Talk about a to
                             generatedText = bestMatch;
                             console.log('🤖 Extracted response using pattern matching (Strategy 4)');
                         }
+                    }
+                    
+                    // Strategy 5: Extract only sentences that look like actual dialogue responses
+                    // Split by sentences and filter out instruction-like sentences
+                    const sentences = generatedText.match(/[^.!?]+[.!?]+/g) || [generatedText];
+                    const filteredSentences = [];
+                    
+                    // Words that indicate instructions (not dialogue)
+                    const instructionWords = /^(Address|Keep|Be|Respond|Reference|Match|Talk|Build|Share|Relate|Make|Bounce|Say something|You are|This is a conversation)/i;
+                    
+                    // Extract sentences that look like actual responses
+                    for (const sentence of sentences) {
+                        const trimmed = sentence.trim();
+                        // Skip if it's too short (likely fragment)
+                        if (trimmed.length < 10) continue;
+                        // Skip if it starts with instruction words
+                        if (instructionWords.test(trimmed)) continue;
+                        // Skip if it contains instruction phrases
+                        if (/\(say|when referring|1-2 sentences|conversational and engaging|natural and engaging/i.test(trimmed)) continue;
+                        // Keep sentences that look like dialogue
+                        filteredSentences.push(trimmed);
+                    }
+                    
+                    // If we found good sentences, use them; otherwise use cleaned text
+                    if (filteredSentences.length > 0) {
+                        generatedText = filteredSentences.join(' ').trim();
+                        // Limit to first 2-3 sentences
+                        const sentenceMatch = generatedText.match(/^([^.!?]+[.!?]+){1,3}/);
+                        if (sentenceMatch) {
+                            generatedText = sentenceMatch[0].trim();
+                        }
+                        console.log('🤖 Extracted dialogue sentences (Strategy 5)');
                     }
                     
                     // Clean up the response - but preserve "User" references
