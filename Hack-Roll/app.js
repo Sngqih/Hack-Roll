@@ -268,14 +268,7 @@ class TalkingObjectsApp {
         this.setupObjectFilters();
         
         // Initialize IntelliDisplay - start with checking status
-        // Test LLM connection on init
-        this.updateIntelliDisplay(false, 'Initializing LLM...');
-        // Test API connection after a short delay
-        setTimeout(() => {
-            this.testLLMConnection().catch(err => {
-                console.warn('Initial LLM test failed:', err);
-            });
-        }, 2000);
+        this.updateIntelliDisplay(false, 'Checking LLM availability...');
         
         const thresholdInput = document.getElementById('threshold');
         if (thresholdInput) {
@@ -1523,7 +1516,7 @@ class TalkingObjectsApp {
                 });
                 if (llmResponse && llmResponse.length > 0) {
                     // LLM succeeded
-                    this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                    this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
                     return llmResponse;
                 }
             } catch (error) {
@@ -1537,7 +1530,7 @@ class TalkingObjectsApp {
                     });
                     if (retryResponse && retryResponse.length > 0) {
                         // LLM succeeded on retry
-                        this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                        this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
                         return retryResponse;
                     }
                 } catch (retryError) {
@@ -2082,7 +2075,6 @@ class TalkingObjectsApp {
         }
         
         console.log('🤖 LLM: Generating response for', obj.name, userMessage ? 'to user message' : 'to object dialogue');
-        this.updateIntelliDisplay(false, 'Connecting to LLM...');
         
         try {
             // Build context string from recent conversation
@@ -2164,9 +2156,9 @@ Say something natural and in character about being a ${objType}. Talk about a to
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout for better models
                 
-                // Try models - prioritize stable ones first since DialoGPT may be deprecated (410)
-                // Fallback chain: gpt2 -> distilgpt2 -> DialoGPT-medium -> DialoGPT-small
-                let modelUrl = 'https://api-inference.huggingface.co/models/gpt2';
+                // Try a more advanced conversational model (DialoGPT-medium is better for dialogue)
+                // Fallback chain: DialoGPT-medium -> DialoGPT-small -> GPT-2
+                let modelUrl = 'https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium';
                 
                 response = await fetch(modelUrl, {
                     method: 'POST',
@@ -2222,13 +2214,13 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     clearTimeout(retryTimeout);
                 }
                 
-                // If still 503, try distilgpt2 as backup (faster than gpt2)
+                // If still 503, try DialoGPT-small as backup
                 if (response.status === 503) {
-                    console.log('🤖 LLM: Still loading, trying distilgpt2...');
+                    console.log('🤖 LLM: Still loading, trying DialoGPT-small...');
                     const fallbackController = new AbortController();
                     const fallbackTimeout = setTimeout(() => fallbackController.abort(), 8000);
                     
-                    response = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
+                    response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2251,12 +2243,8 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     clearTimeout(fallbackTimeout);
                 }
                 
-                // Log response status for debugging
-                console.log('🤖 LLM: API response status:', response.status, response.statusText);
-                
                 if (response.ok) {
                     data = await response.json();
-                    console.log('🤖 LLM: Successfully received response from API');
                 } else if (response.status === 503) {
                     // Model still loading - wait longer and retry one more time
                     console.log('🤖 LLM: Model still loading, final retry...');
@@ -2265,7 +2253,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     const finalController = new AbortController();
                     const finalTimeout = setTimeout(() => finalController.abort(), 10000);
                     
-                    response = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
+                    response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2290,25 +2278,12 @@ Say something natural and in character about being a ${objType}. Talk about a to
                         throw new Error(`API request failed with status ${response.status} - model may be loading`);
                     }
                 } else {
-                    // Get error message from response if available
-                    let errorMsg = `API request failed with status ${response.status}`;
-                    try {
-                        const errorData = await response.json();
-                        if (errorData.error) {
-                            errorMsg += `: ${errorData.error}`;
-                        }
-                    } catch (e) {
-                        // Ignore JSON parse errors
-                    }
-                    console.error('🚨 LLM API Error:', errorMsg);
-                    this.updateIntelliDisplay(false, `API Error: ${response.status} - ${errorMsg.substring(0, 50)}`);
-                    throw new Error(errorMsg);
+                    throw new Error(`API request failed with status ${response.status}`);
                 }
             } catch (error) {
                 // Always retry the LLM - don't use fallback unless absolutely necessary
-                console.warn('🚨 LLM error, retrying with different approach:', error.message);
+                console.warn('LLM error, retrying with different approach:', error.message);
                 console.error('Full error details:', error);
-                console.error('Error stack:', error.stack);
                 
                 // Check for CORS errors specifically
                 const errorMsg = error.message || error.toString() || '';
@@ -2421,7 +2396,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     const retryController = new AbortController();
                     const retryTimeout = setTimeout(() => retryController.abort(), 8000);
                     
-                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
+                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2459,7 +2434,6 @@ Say something natural and in character about being a ${objType}. Talk about a to
             
             // If still no valid text, throw error to prevent fallback
             if (generatedText.length < 5) {
-                console.error('⚠️ LLM generated invalid/empty response. Response data:', data);
                 throw new Error('LLM generated invalid response - will retry');
             }
             
@@ -2662,7 +2636,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                 const llmResponse = await this.generateLLMResponse(obj, null, userMessage);
                 if (llmResponse && llmResponse.length > 0) {
                     // LLM succeeded
-                    this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                    this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
                     return llmResponse;
                 }
             } catch (error) {
@@ -2673,7 +2647,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     const retryResponse = await this.generateLLMResponse(obj, null, userMessage);
                     if (retryResponse && retryResponse.length > 0) {
                         // LLM succeeded on retry
-                        this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                        this.updateIntelliDisplay(true, 'LLM active - Using DialoGPT-medium');
                         return retryResponse;
                     }
                 } catch (retryError) {
@@ -3257,92 +3231,6 @@ Say something natural and in character about being a ${objType}. Talk about a to
             });
         } catch (error) {
             console.warn('TTS error:', error);
-        }
-    }
-    
-    async testLLMConnection() {
-        // Test if LLM API is accessible - try multiple models
-        try {
-            console.log('🧪 Testing LLM connection...');
-            this.updateIntelliDisplay(false, 'Testing LLM connection...');
-            
-            // Try multiple models - some may be deprecated (410) or require auth
-            const modelsToTry = [
-                'gpt2',
-                'distilgpt2',
-                'microsoft/DialoGPT-small',
-                'facebook/blenderbot-400M-distill'
-            ];
-            
-            let lastError = null;
-            
-            for (const modelName of modelsToTry) {
-                try {
-                    const testController = new AbortController();
-                    const testTimeout = setTimeout(() => testController.abort(), 5000);
-                    
-                    // Use format: https://api-inference.huggingface.co/models/{model_name}
-                    const modelUrl = `https://api-inference.huggingface.co/models/${modelName}`;
-                    console.log(`🧪 Testing model: ${modelName}...`);
-                    
-                    const testResponse = await fetch(modelUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: 'Hello',
-                            parameters: {
-                                max_new_tokens: 5,
-                                return_full_text: false
-                            }
-                        }),
-                        signal: testController.signal
-                    });
-                    
-                    clearTimeout(testTimeout);
-                    
-                    if (testResponse.ok) {
-                        console.log(`✅ LLM connection test successful with ${modelName}`);
-                        this.updateIntelliDisplay(true, `LLM ready - Using ${modelName}`);
-                        return; // Success!
-                    } else if (testResponse.status === 503) {
-                        // Model loading - this is OK, means the endpoint exists
-                        console.log(`⚠️ Model ${modelName} is loading (503) - endpoint exists`);
-                        this.updateIntelliDisplay(true, `LLM endpoint found (may need warm-up)`);
-                        return;
-                    } else if (testResponse.status === 401 || testResponse.status === 403) {
-                        console.warn(`⚠️ Model ${modelName} requires authentication (${testResponse.status})`);
-                        lastError = `Authentication required`;
-                        continue; // Try next model
-                    } else if (testResponse.status === 410) {
-                        console.warn(`⚠️ Model ${modelName} no longer available (410 Gone)`);
-                        lastError = `Model ${modelName} deprecated`;
-                        continue; // Try next model
-                    } else {
-                        const errorText = await testResponse.text().catch(() => '');
-                        console.warn(`⚠️ Model ${modelName} test failed:`, testResponse.status, errorText.substring(0, 100));
-                        lastError = `API returned ${testResponse.status}`;
-                        continue; // Try next model
-                    }
-                } catch (modelError) {
-                    console.warn(`⚠️ Model ${modelName} test error:`, modelError.message);
-                    lastError = modelError.message;
-                    continue; // Try next model
-                }
-            }
-            
-            // All models failed
-            console.error('❌ All LLM models failed to connect');
-            this.updateIntelliDisplay(false, `No working models found. Last error: ${lastError || 'Unknown'}`);
-        } catch (error) {
-            console.error('❌ LLM connection test failed:', error);
-            const errorMsg = error.message || 'Unknown error';
-            if (errorMsg.includes('CORS') || errorMsg.includes('network') || errorMsg.includes('Failed to fetch')) {
-                this.updateIntelliDisplay(false, 'Network/CORS error - Hugging Face API may be blocked');
-            } else {
-                this.updateIntelliDisplay(false, `Connection error: ${errorMsg.substring(0, 40)}`);
-            }
         }
     }
     

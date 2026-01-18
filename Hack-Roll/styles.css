@@ -723,7 +723,7 @@ body {
     min-width: 120px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     pointer-events: none;
-    z-index: 500;
+    z-index: 1000;
     animation: fadeIn 0.3s;
     word-wrap: break-word;
     text-align: center;
@@ -1023,25 +1023,7 @@ body {
     gap: 8px;
     min-height: 100px;
     max-height: 300px;
-    overflow-y: scroll;
-    overflow-x: hidden;
-}
-
-.pokedex-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.pokedex-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.pokedex-list::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 3px;
-}
-
-.pokedex-list::-webkit-scrollbar-thumb:hover {
-    background: #777;
+    overflow-y: auto;
 }
 
 .objdex-item {
