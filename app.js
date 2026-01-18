@@ -35,6 +35,9 @@ class TalkingObjectsApp {
         this.currentlySpeaking = null; // Track which object is currently speaking (to prevent interruptions)
         this.localLLM = null; // Local Transformers.js model instance
         this.localLLMLoading = false; // Track if local LLM is loading
+        this.ollamaUrl = 'http://localhost:11434'; // Local Ollama server URL (null to disable)
+        this.ollamaModel = 'phi3'; // Model to use with Ollama (e.g., 'phi3', 'qwen3:4b', 'llama3.2:3b')
+        this.llmMode = 'auto'; // 'browser' (Transformers.js), 'ollama' (local server), or 'auto' (try ollama, fallback to browser)
         
         // ElevenLabs TTS
         this.elevenLabsApiKey = 'sk_da8afb34cd0a951cbca84a19a3a346cf1408e42cc24ca06f'; // API key stored in memory
@@ -270,14 +273,36 @@ class TalkingObjectsApp {
         this.setupObjectFilters();
         
         // Initialize IntelliDisplay - start with checking status
-        // Load local LLM model on init
-        this.updateIntelliDisplay(false, 'Loading local LLM model...');
-        // Load local model after a short delay
-        setTimeout(() => {
-            this.loadLocalLLM().catch(err => {
-                console.warn('Local LLM loading failed:', err);
+        // Try Ollama first if in 'auto' or 'ollama' mode, otherwise use browser model
+        if ((this.llmMode === 'ollama' || this.llmMode === 'auto') && this.ollamaUrl) {
+            this.updateIntelliDisplay(false, `Checking Ollama connection (${this.ollamaModel})...`);
+            this.testOllamaConnection().catch(err => {
+                console.warn('Ollama connection test failed:', err);
+                if (this.llmMode === 'auto') {
+                    // Auto mode: fall back to browser model
+                    this.updateIntelliDisplay(false, 'Ollama unavailable - trying browser model...');
+                    setTimeout(() => {
+                        this.loadLocalLLM().catch(err => {
+                            console.warn('Local LLM loading failed:', err);
+                            this.updateIntelliDisplay(false, 'LLM unavailable - using fallback dialogue');
+                        });
+                    }, 500);
+                } else {
+                    // Ollama-only mode: show error
+                    this.updateIntelliDisplay(false, 'Ollama unavailable - using fallback dialogue');
+                }
             });
-        }, 2000);
+        } else {
+            // Browser mode - load Transformers.js model
+            this.updateIntelliDisplay(false, 'Loading browser LLM model...');
+            // Load local model after a short delay
+            setTimeout(() => {
+                this.loadLocalLLM().catch(err => {
+                    console.warn('Local LLM loading failed:', err);
+                    this.updateIntelliDisplay(false, 'LLM unavailable - using fallback dialogue');
+                });
+            }, 2000);
+        }
         
         const thresholdInput = document.getElementById('threshold');
         if (thresholdInput) {
@@ -2153,7 +2178,22 @@ ${contextString}
 Say something natural and in character about being a ${objType}. Talk about a topic relevant to your type (like ${objTopics[0]}, ${objTopics[1]}, or ${objTopics[2]}). Keep it short (1-2 sentences max). Be conversational and engaging.`;
             }
             
-            // Use local LLM model (Transformers.js)
+            // Try Ollama first if configured (in 'ollama' or 'auto' mode)
+            if ((this.llmMode === 'ollama' || this.llmMode === 'auto') && this.ollamaUrl) {
+                try {
+                    const ollamaResponse = await this.generateOllamaResponse(prompt);
+                    if (ollamaResponse) {
+                        console.log('✅ LLM: Generated response from Ollama:', ollamaResponse.substring(0, 50) + '...');
+                        this.llmInUse = false;
+                        return ollamaResponse;
+                    }
+                } catch (ollamaError) {
+                    console.warn('⚠️ Ollama request failed, trying browser model:', ollamaError);
+                    // Fall through to browser model
+                }
+            }
+            
+            // Use local LLM model (Transformers.js) - browser-based
             // If local model not loaded, try to load it first
             if (!this.localLLM && !this.localLLMLoading) {
                 console.log('🤖 LLM: Local model not loaded, loading now...');
@@ -3486,6 +3526,114 @@ Say something natural and in character about being a ${objType}. Talk about a to
             console.error('❌ Failed to load local LLM:', error);
             this.updateIntelliDisplay(false, `Failed to load local LLM: ${error.message?.substring(0, 40) || 'Unknown error'}`);
             console.warn('⚠️ Will use fallback dialogue instead');
+        }
+    }
+    
+    async generateOllamaResponse(prompt) {
+        // Generate response using local Ollama server
+        if (!this.ollamaUrl) {
+            throw new Error('Ollama URL not configured');
+        }
+        
+        try {
+            console.log(`🤖 LLM: Generating with Ollama (${this.ollamaModel})...`);
+            this.updateIntelliDisplay(true, `Generating with Ollama (${this.ollamaModel})...`);
+            
+            // Create abort controller for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for local server
+            
+            const response = await fetch(`${this.ollamaUrl}/api/generate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: this.ollamaModel,
+                    prompt: prompt,
+                    stream: false, // Non-streaming for simplicity
+                    options: {
+                        temperature: 0.85,
+                        top_p: 0.92,
+                        top_k: 50,
+                        num_predict: 120, // Max tokens to generate
+                    }
+                }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`Ollama API returned ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            // Ollama returns { response: "...", done: true/false }
+            let generatedText = data.response || '';
+            
+            if (!generatedText || generatedText.trim().length < 5) {
+                throw new Error('Ollama returned empty or invalid response');
+            }
+            
+            // Clean up the response
+            generatedText = generatedText.trim();
+            
+            // Remove prompt remnants if present
+            const promptLower = prompt.toLowerCase();
+            const generatedLower = generatedText.toLowerCase();
+            
+            // Check if generated text starts with prompt
+            if (generatedLower.startsWith(promptLower.substring(0, Math.min(100, promptLower.length)))) {
+                generatedText = generatedText.substring(prompt.length).trim();
+            }
+            
+            // Clean up common patterns
+            generatedText = generatedText.replace(/^You are .+?\.\s*/i, '').trim();
+            generatedText = generatedText.replace(/^Say something .+?\.\s*/i, '').trim();
+            
+            // Ensure it's not too long
+            if (generatedText.length > 150) {
+                generatedText = generatedText.substring(0, 150).trim();
+                const lastPeriod = generatedText.lastIndexOf('.');
+                const lastExclamation = generatedText.lastIndexOf('!');
+                const lastQuestion = generatedText.lastIndexOf('?');
+                const lastPunctuation = Math.max(lastPeriod, lastExclamation, lastQuestion);
+                if (lastPunctuation > 30) {
+                    generatedText = generatedText.substring(0, lastPunctuation + 1);
+                }
+            }
+            
+            return generatedText;
+            
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('Ollama request timed out');
+            }
+            throw error;
+        }
+    }
+    
+    async testOllamaConnection() {
+        // Test if Ollama server is accessible and model is available
+        if (!this.ollamaUrl) {
+            throw new Error('Ollama URL not configured');
+        }
+        
+        try {
+            // Test connection with a simple prompt
+            const testResponse = await this.generateOllamaResponse('Hi');
+            if (testResponse && testResponse.trim().length > 0) {
+                console.log('✅ Ollama connection successful!');
+                this.updateIntelliDisplay(true, `Ollama ready - Using ${this.ollamaModel}`);
+                return true;
+            } else {
+                throw new Error('Ollama returned empty response');
+            }
+        } catch (error) {
+            console.warn('❌ Ollama connection test failed:', error);
+            throw error;
         }
     }
     
