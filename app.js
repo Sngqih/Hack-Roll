@@ -2265,7 +2265,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     const finalController = new AbortController();
                     const finalTimeout = setTimeout(() => finalController.abort(), 10000);
                     
-                    response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                    response = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2421,7 +2421,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     const retryController = new AbortController();
                     const retryTimeout = setTimeout(() => retryController.abort(), 8000);
                     
-                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
