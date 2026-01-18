@@ -28,6 +28,12 @@ class TalkingObjectsApp {
         this.overlayUpdateInterval = 33; // Update overlay every ~33ms (~30fps) to follow objects smoothly
         this.chatHistory = []; // Store chat history
         this.objdex = new Map(); // Store saved participants/objects
+        this.conversationContext = []; // Store recent conversation for LLM context
+        this.maxContextLength = 10; // Keep last 10 messages for context
+        this.llmEnabled = true; // Toggle for LLM usage
+        this.conversationContext = []; // Store recent conversation for LLM context
+        this.maxContextLength = 10; // Keep last 10 messages for context
+        this.llmEnabled = true; // Toggle for LLM usage
         
         // Object personalities - dialogue based on object type
         this.personalities = {
@@ -600,7 +606,7 @@ class TalkingObjectsApp {
             if (participantObjects.length === 1) {
                 const obj = participantObjects[0];
                 if (Math.random() < 0.1 && Date.now() - obj.lastSpoke > 1200) {
-                    this.makeObjectTalk(obj.id, 'random');
+                    this.makeObjectTalk(obj.id, 'random').catch(err => console.error('Error in makeObjectTalk:', err));
                 }
             }
             return;
@@ -641,12 +647,12 @@ class TalkingObjectsApp {
         if (Math.random() < 0.1 && participantObjects.length > 0) { // 10% chance per detection
             const obj = participantObjects[Math.floor(Math.random() * participantObjects.length)];
             if (Date.now() - obj.lastSpoke > 1200) { // Faster cooldown
-                this.makeObjectTalk(obj.id, 'random');
+                this.makeObjectTalk(obj.id, 'random').catch(err => console.error('Error in makeObjectTalk:', err));
             }
         }
     }
     
-    makeObjectTalk(objectId, dialogueType, otherObj = null, customDialogue = null) {
+    async makeObjectTalk(objectId, dialogueType, otherObj = null, customDialogue = null) {
         const obj = this.objects.get(objectId);
         if (!obj) return;
         if (obj.isMuted) return;
@@ -675,7 +681,7 @@ class TalkingObjectsApp {
             dialogue = customDialogue;
         } else if (otherObj && dialogueType === 'responses' && otherObj.dialogue) {
             // If this is a response, try to generate a response based on what the other object said
-            dialogue = this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
+            dialogue = await this.generateResponseToDialogue(obj, otherObj.dialogue, otherObj);
             if (!dialogue) {
                 // Fallback to regular responses if no contextual response found
                 dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
@@ -1422,7 +1428,19 @@ class TalkingObjectsApp {
         });
     }
     
-    generateResponseToDialogue(obj, previousDialogue, otherObj) {
+    async generateResponseToDialogue(obj, previousDialogue, otherObj) {
+        // Try LLM first for better contextual responses
+        if (this.llmEnabled) {
+            const llmResponse = await this.generateLLMResponse(obj, {
+                previousMessage: previousDialogue,
+                otherObj: otherObj
+            });
+            if (llmResponse && llmResponse.length > 0) {
+                return llmResponse;
+            }
+        }
+        
+        // Fallback to rule-based response
         // Analyze the previous dialogue and generate a contextual response
         const dialogueLower = previousDialogue.toLowerCase();
         const objName = otherObj.name;
@@ -1931,6 +1949,252 @@ class TalkingObjectsApp {
         
         // Store in history
         this.chatHistory.push({ sender, message, type, timestamp: Date.now() });
+        
+        // Update conversation context for LLM
+        this.updateConversationContext(sender, message, type);
+    }
+    
+    updateConversationContext(sender, message, type) {
+        this.conversationContext.push({
+            sender,
+            message,
+            type,
+            timestamp: Date.now()
+        });
+        
+        // Keep only recent messages
+        if (this.conversationContext.length > this.maxContextLength) {
+            this.conversationContext.shift();
+        }
+    }
+    
+    async generateLLMResponse(obj, context, userMessage = null) {
+        if (!this.llmEnabled) {
+            return null; // Fallback to rule-based if LLM is disabled
+        }
+        
+        try {
+            // Build context string from recent conversation
+            let contextString = '';
+            if (this.conversationContext.length > 0) {
+                const recentMessages = this.conversationContext.slice(-5); // Last 5 messages
+                contextString = recentMessages.map(msg => {
+                    if (msg.type === 'user') {
+                        return `User: ${msg.message}`;
+                    } else {
+                        return `${msg.sender}: "${msg.message}"`;
+                    }
+                }).join('\n');
+            }
+            
+            // Create prompt for the LLM
+            const objName = obj.name;
+            const objType = obj.className;
+            const objEmoji = obj.emoji;
+            const personalityTraits = this.getPersonalityTraits(obj);
+            
+            let prompt = '';
+            if (userMessage) {
+                // Response to user message
+                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality. 
+
+Recent conversation:
+${contextString}
+
+User just said: "${userMessage}"
+
+Respond naturally as ${objName}, staying in character. Keep it short (1-2 sentences max), friendly, and match your personality. Reference the conversation if relevant.`;
+            } else if (context) {
+                // Response to another object
+                const otherObj = context.otherObj;
+                const previousMessage = context.previousMessage;
+                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality.
+
+Recent conversation:
+${contextString}
+
+${otherObj.name} (${otherObj.className}) just said: "${previousMessage}"
+
+Respond naturally as ${objName}, staying in character. Keep it short (1-2 sentences max), friendly, and match your personality. Reference what ${otherObj.name} said if relevant.`;
+            } else {
+                // General conversation starter
+                prompt = `You are ${objName}, a ${objType} (${objEmoji}) with a ${personalityTraits} personality.
+
+Recent conversation:
+${contextString}
+
+Say something natural and in character. Keep it short (1-2 sentences max).`;
+            }
+            
+            // Use a lightweight LLM API - try multiple endpoints for reliability
+            let response;
+            let data;
+            
+            try {
+                // Create abort controller for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                
+                // Try a simple text generation model (Hugging Face Inference API)
+                response = await fetch('https://api-inference.huggingface.co/models/gpt2', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        inputs: prompt,
+                        parameters: {
+                            max_new_tokens: 40,
+                            temperature: 0.8,
+                            top_p: 0.9,
+                            return_full_text: false
+                        }
+                    }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    data = await response.json();
+                } else {
+                    throw new Error('API request failed');
+                }
+            } catch (error) {
+                // If Hugging Face fails, use enhanced contextual fallback
+                console.warn('LLM API unavailable, using enhanced contextual fallback');
+                return this.generateEnhancedContextualResponse(obj, context, userMessage);
+            }
+            
+            // Extract generated text
+            let generatedText = '';
+            if (Array.isArray(data) && data.length > 0) {
+                generatedText = data[0].generated_text || '';
+            } else if (data.generated_text) {
+                generatedText = data.generated_text;
+            } else if (typeof data === 'string') {
+                generatedText = data;
+            }
+            
+            // Clean up the response
+            generatedText = generatedText.trim();
+            
+            // Remove any prompt remnants
+            const promptStart = prompt.substring(0, 30);
+            if (generatedText.includes(promptStart)) {
+                generatedText = generatedText.replace(promptStart, '').trim();
+            }
+            
+            // Remove common prefixes that models might add
+            generatedText = generatedText.replace(/^(User|You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
+            
+            // Ensure it's not too long
+            if (generatedText.length > 120) {
+                generatedText = generatedText.substring(0, 120).trim();
+                // Try to end at a sentence
+                const lastPeriod = generatedText.lastIndexOf('.');
+                const lastExclamation = generatedText.lastIndexOf('!');
+                const lastQuestion = generatedText.lastIndexOf('?');
+                const lastPunctuation = Math.max(lastPeriod, lastExclamation, lastQuestion);
+                if (lastPunctuation > 30) {
+                    generatedText = generatedText.substring(0, lastPunctuation + 1);
+                }
+            }
+            
+            // Ensure we have valid text
+            if (generatedText.length < 5) {
+                return this.generateEnhancedContextualResponse(obj, context, userMessage);
+            }
+            
+            return generatedText || null;
+            
+        } catch (error) {
+            console.warn('LLM generation error:', error);
+            return this.generateEnhancedContextualResponse(obj, context, userMessage);
+        }
+    }
+    
+    getPersonalityTraits(obj) {
+        const objType = obj.className;
+        const traits = {
+            'laptop': 'tech-savvy, logical, and helpful',
+            'phone': 'social, connected, and always ready',
+            'book': 'wise, thoughtful, and knowledgeable',
+            'cup': 'friendly, warm, and comforting',
+            'bottle': 'refreshing, practical, and reliable',
+            'chair': 'supportive, comfortable, and welcoming',
+            'default': 'friendly, curious, and engaging'
+        };
+        return traits[objType] || traits.default;
+    }
+    
+    generateEnhancedContextualResponse(obj, context, userMessage) {
+        // Enhanced rule-based response that uses conversation context
+        const objName = obj.name;
+        const objType = obj.className;
+        const recentMessages = this.conversationContext.slice(-3); // Last 3 messages
+        
+        if (userMessage) {
+            // Response to user - use context from recent messages
+            const userMsgLower = userMessage.toLowerCase();
+            const responses = [];
+            
+            // Check if user is referencing something from conversation
+            for (const msg of recentMessages) {
+                if (msg.type === 'object' && userMsgLower.includes(msg.sender.toLowerCase())) {
+                    responses.push(`Oh, you're talking about ${msg.sender}! They said "${msg.message.substring(0, 30)}..."`);
+                }
+                if (msg.type === 'user' && userMsgLower.includes(msg.message.toLowerCase().substring(0, 10))) {
+                    responses.push(`You mentioned that earlier!`);
+                }
+            }
+            
+            // Add personality-based responses
+            if (objType === 'laptop' || objType === 'phone') {
+                responses.push(`I understand what you're saying!`, `That's interesting!`, `Let me process that...`);
+            } else if (objType === 'book') {
+                responses.push(`I've read about that!`, `That's a great point!`, `Knowledge is power!`);
+            } else {
+                responses.push(`I hear you!`, `That makes sense!`, `Got it!`);
+            }
+            
+            return responses[Math.floor(Math.random() * responses.length)];
+        } else if (context && context.previousMessage) {
+            // Response to another object - reference what they said
+            const otherObj = context.otherObj;
+            const prevMsg = context.previousMessage;
+            const prevMsgLower = prevMsg.toLowerCase();
+            
+            const responses = [];
+            
+            // Direct references to what was said
+            if (prevMsgLower.includes('?')) {
+                responses.push(`That's a good question, ${otherObj.name}!`, `Hmm, ${otherObj.name}, let me think...`);
+            }
+            if (prevMsgLower.includes('!') || prevMsgLower.includes('amazing') || prevMsgLower.includes('great')) {
+                responses.push(`I agree, ${otherObj.name}!`, `Totally, ${otherObj.name}!`);
+            }
+            
+            // Reference specific words from their message
+            const words = prevMsg.split(' ').filter(w => w.length > 4);
+            if (words.length > 0) {
+                const randomWord = words[Math.floor(Math.random() * words.length)];
+                responses.push(`You mentioned ${randomWord}, ${otherObj.name} - that's interesting!`);
+            }
+            
+            // Personality-based responses
+            if (objType === 'laptop' || objType === 'phone') {
+                responses.push(`I get what you mean, ${otherObj.name}!`, `${otherObj.name}, that's logical!`);
+            } else if (objType === 'book') {
+                responses.push(`Well said, ${otherObj.name}!`, `${otherObj.name}, that's profound!`);
+            } else {
+                responses.push(`I hear you, ${otherObj.name}!`, `${otherObj.name}, that makes sense!`);
+            }
+            
+            return responses[Math.floor(Math.random() * responses.length)];
+        }
+        
+        return null;
     }
     
     processUserMessage(userMessage) {
@@ -1956,17 +2220,26 @@ class TalkingObjectsApp {
         
         // Generate responses with a delay to make it feel natural
         responders.forEach((obj, index) => {
-            setTimeout(() => {
-                const response = this.generateResponseToUserMessage(obj, userMessage);
+            setTimeout(async () => {
+                const response = await this.generateResponseToUserMessage(obj, userMessage);
                 if (response) {
                     // makeObjectTalk will add the message to chat log automatically
-                    this.makeObjectTalk(obj.id, 'responses', null, response);
+                    await this.makeObjectTalk(obj.id, 'responses', null, response).catch(err => console.error('Error in makeObjectTalk:', err));
                 }
             }, 500 + index * 800); // Stagger responses
         });
     }
     
-    generateResponseToUserMessage(obj, userMessage) {
+    async generateResponseToUserMessage(obj, userMessage) {
+        // Try LLM first for better contextual responses
+        if (this.llmEnabled) {
+            const llmResponse = await this.generateLLMResponse(obj, null, userMessage);
+            if (llmResponse && llmResponse.length > 0) {
+                return llmResponse;
+            }
+        }
+        
+        // Fallback to rule-based response
         const messageLower = userMessage.toLowerCase();
         const objType = obj.className;
         const personality = obj.personality;
