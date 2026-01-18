@@ -3334,7 +3334,10 @@ Say something natural and in character about being a ${objType}. Talk about a to
             
             // All models failed
             console.error('❌ All LLM models failed to connect');
-            this.updateIntelliDisplay(false, `No working models found. Last error: ${lastError || 'Unknown'}`);
+            console.warn('⚠️ Hugging Face Inference API appears to be unavailable (410 Gone).');
+            console.warn('⚠️ The free Inference API may have been deprecated or requires authentication.');
+            console.warn('⚠️ The app will use fallback dialogue instead.');
+            this.updateIntelliDisplay(false, 'Hugging Face API unavailable (410) - Using fallback dialogue');
         } catch (error) {
             console.error('❌ LLM connection test failed:', error);
             const errorMsg = error.message || 'Unknown error';
