@@ -35,6 +35,26 @@ class TalkingObjectsApp {
         this.maxContextLength = 10; // Keep last 10 messages for context
         this.llmEnabled = true; // Toggle for LLM usage
         
+        // ElevenLabs TTS
+        this.elevenLabsApiKey = 'sk_da8afb34cd0a951cbca84a19a3a346cf1408e42cc24ca06f'; // API key stored in memory
+        this.ttsEnabled = true; // Toggle for TTS on/off
+        this.activeAudioStreams = new Map(); // Track multiple audio streams by object ID
+        
+        // ElevenLabs voice IDs for different object types
+        this.voiceMapping = {
+            'laptop': '21m00Tcm4TlvDq8ikWAM',      // Default male voice
+            'phone': 'EXAVITQu4vr4xnSDxMaL',        // Female voice
+            'book': 'TxGEqnHWrfWFTfGW9XjX',         // Calm voice
+            'cup': 'VR6AewLTigWG4xSOukaG',          // Warm voice
+            'bottle': 'pFZP5JQG7iQjIQuC4Oy5',       // Different voice
+            'chair': '21m00Tcm4TlvDq8ikWAM',        // Male voice
+            'couch': 'EXAVITQu4vr4xnSDxMaL',        // Female voice
+            'keyboard': 'TxGEqnHWrfWFTfGW9XjX',     // Calm voice
+            'mouse': 'VR6AewLTigWG4xSOukaG',        // Warm voice
+            'backpack': 'pFZP5JQG7iQjIQuC4Oy5',     // Different voice
+            'default': '21m00Tcm4TlvDq8ikWAM'       // Default voice
+        };
+        
         // Object personalities - dialogue based on object type
         this.personalities = {
             'laptop': {
@@ -200,6 +220,16 @@ class TalkingObjectsApp {
     }
     
     async init() {
+        // Mute button - toggles TTS on/off
+        const muteBtn = document.getElementById('muteBtn');
+        if (muteBtn) {
+            muteBtn.addEventListener('click', () => {
+                this.ttsEnabled = !this.ttsEnabled;
+                muteBtn.classList.toggle('tts-off', !this.ttsEnabled);
+                muteBtn.querySelector('span:last-child').textContent = this.ttsEnabled ? 'Mute' : 'Unmute';
+            });
+        }
+
         // Video toggle button (merged Start/Stop functionality)
         const videoToggleBtn = document.getElementById('videoToggleBtn');
         if (videoToggleBtn) {
@@ -562,6 +592,7 @@ class TalkingObjectsApp {
                 lastSeen: Date.now(),
                 speechBubble: null,
                 isMuted: false,
+                ttsMuted: false, // Separate TTS muting from visual muting
                 inParticipantList: false // By default, not in participant list
             });
         }
@@ -731,6 +762,9 @@ class TalkingObjectsApp {
             if (obj.inParticipantList) {
                 this.addChatMessage(obj.name, dialogue, 'object');
             }
+
+            // Speak the dialogue using ElevenLabs TTS with object's voice (check ttsMuted status)
+            this.speakDialogue(dialogue, objectId, obj.className, obj.ttsMuted);
             
             // Remove thinking animation
             if (obj.thinkingBubble) {
@@ -1025,6 +1059,7 @@ class TalkingObjectsApp {
         for (const obj of visibleObjects) {
             const card = document.createElement('div');
             card.className = 'participant-card';
+            const muteStatus = obj.ttsMuted ? '🔇' : '🔊';
             // Check if object is already saved in ObjDex
             const isSaved = this.objdex.has(obj.id);
             const isVisible = this.isObjectVisible(obj);
@@ -1035,7 +1070,10 @@ class TalkingObjectsApp {
                         <h4>${obj.emoji} ${obj.name}</h4>
                         <p class="class-name">${obj.class}</p>
                     </div>
-                    <button class="remove-participant-btn" title="Remove from participant list">×</button>
+                    <div class="participant-card-buttons">
+                        <button class="tts-mute-btn" title="Toggle TTS for this object">${muteStatus}</button>
+                        <button class="remove-participant-btn" title="Remove from participant list">×</button>
+                    </div>
                 </div>
                 <div class="dialogue">${obj.dialogue ? `"${obj.dialogue}"` : '...'}</div>
                 <div class="participant-card-actions">
@@ -1047,6 +1085,15 @@ class TalkingObjectsApp {
                     </button>
                 </div>
             `;
+            
+            // Make TTS mute button clickable - toggles TTS for this specific object
+            const ttsMuteBtn = card.querySelector('.tts-mute-btn');
+            ttsMuteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                obj.ttsMuted = !obj.ttsMuted;
+                ttsMuteBtn.textContent = obj.ttsMuted ? '🔇' : '🔊';
+                console.log(`${obj.name} TTS ${obj.ttsMuted ? 'muted' : 'unmuted'}`);
+            });
             
             // Make remove button clickable
             const removeBtn = card.querySelector('.remove-participant-btn');
@@ -2755,6 +2802,66 @@ Say something natural and in character. Keep it short (1-2 sentences max).`;
         
         return union > 0 ? intersection / union : 0;
     }
+
+    // ElevenLabs TTS Integration - supports multiple overlapping voices
+    async speakDialogue(text, objectId, className, isMuted = false) {
+        if (!this.ttsEnabled || !text || !this.elevenLabsApiKey || isMuted) return;
+        
+        try {
+            // Get the voice for this object type
+            const voiceId = this.voiceMapping[className] || this.voiceMapping.default;
+
+            // Call ElevenLabs API with the appropriate voice
+            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'xi-api-key': this.elevenLabsApiKey,
+                },
+                body: JSON.stringify({
+                    text: text,
+                    model_id: 'eleven_monolingual_v1',
+                    voice_settings: {
+                        stability: 0.5,
+                        similarity_boost: 0.75,
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                console.warn('ElevenLabs TTS failed:', response.status, response.statusText);
+                return;
+            }
+
+            // Convert response to audio blob
+            const audioData = await response.arrayBuffer();
+            const audioBlob = new Blob([audioData], { type: 'audio/mpeg' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+
+            // Create and play audio - allow overlapping with other audio streams
+            const audio = new Audio(audioUrl);
+            
+            // Track this audio stream for the object
+            if (this.activeAudioStreams.has(objectId)) {
+                const oldAudio = this.activeAudioStreams.get(objectId);
+                oldAudio.pause();
+            }
+            this.activeAudioStreams.set(objectId, audio);
+            
+            audio.play().catch(err => console.warn('Audio playback failed:', err));
+
+            // Clean up blob URL and remove from tracking when done
+            audio.addEventListener('ended', () => {
+                URL.revokeObjectURL(audioUrl);
+                if (this.activeAudioStreams.get(objectId) === audio) {
+                    this.activeAudioStreams.delete(objectId);
+                }
+            });
+        } catch (error) {
+            console.warn('TTS error:', error);
+        }
+    }
+
 }
 
 // Initialize app - will be called after scripts load

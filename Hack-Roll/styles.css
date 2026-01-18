@@ -386,6 +386,37 @@ body {
     margin-bottom: 0;
 }
 
+.participant-card-buttons {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.tts-mute-btn {
+    background: #4a9eff;
+    border: none;
+    color: #fff;
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.tts-mute-btn:hover {
+    background: #5aaeff;
+    transform: scale(1.1);
+}
+
+.tts-mute-btn:active {
+    transform: scale(0.95);
+}
+
 .remove-participant-btn {
     background: #e53e3e;
     border: none;
@@ -483,6 +514,15 @@ body {
 
 .zoom-control-btn .icon {
     font-size: 18px;
+}
+
+.zoom-control-btn.tts-off {
+    background: #6b3a3a;
+    opacity: 0.7;
+}
+
+.zoom-control-btn.tts-off:hover {
+    background: #7b4a4a;
 }
 
 .end-btn {
