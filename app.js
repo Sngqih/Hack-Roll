@@ -3260,6 +3260,51 @@ Say something natural and in character about being a ${objType}. Talk about a to
         }
     }
     
+    async testLLMConnection() {
+        // Test if LLM API is accessible
+        try {
+            console.log('🧪 Testing LLM connection...');
+            this.updateIntelliDisplay(false, 'Testing LLM connection...');
+            
+            const testController = new AbortController();
+            const testTimeout = setTimeout(() => testController.abort(), 5000);
+            
+            const testResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    inputs: 'test',
+                    parameters: {
+                        max_new_tokens: 10,
+                        return_full_text: false
+                    }
+                }),
+                signal: testController.signal
+            });
+            
+            clearTimeout(testTimeout);
+            
+            if (testResponse.ok) {
+                console.log('✅ LLM connection test successful');
+                this.updateIntelliDisplay(true, 'LLM ready - API accessible');
+            } else {
+                const errorText = await testResponse.text();
+                console.warn('⚠️ LLM test failed:', testResponse.status, errorText);
+                this.updateIntelliDisplay(false, `API returned ${testResponse.status} - check console`);
+            }
+        } catch (error) {
+            console.error('❌ LLM connection test failed:', error);
+            const errorMsg = error.message || 'Unknown error';
+            if (errorMsg.includes('CORS') || errorMsg.includes('network') || errorMsg.includes('Failed to fetch')) {
+                this.updateIntelliDisplay(false, 'Network/CORS error - check console');
+            } else {
+                this.updateIntelliDisplay(false, `Connection error: ${errorMsg.substring(0, 40)}`);
+            }
+        }
+    }
+    
     updateIntelliDisplay(isActive, message) {
         const statusEl = document.getElementById('intelliStatus');
         const detailsEl = document.getElementById('intelliDetails');
