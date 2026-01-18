@@ -1574,7 +1574,7 @@ class TalkingObjectsApp {
                 });
                 if (llmResponse && llmResponse.length > 0) {
                     // LLM succeeded
-                    this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                    // Status will be updated by generateLLMResponse based on which LLM was used
                     return llmResponse;
                 }
             } catch (error) {
@@ -1588,7 +1588,7 @@ class TalkingObjectsApp {
                     });
                     if (retryResponse && retryResponse.length > 0) {
                         // LLM succeeded on retry
-                        this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                        // Status will be updated by generateLLMResponse based on which LLM was used
                         return retryResponse;
                     }
                 } catch (retryError) {
@@ -2184,14 +2184,19 @@ Say something natural and in character about being a ${objType}. Talk about a to
             if ((this.llmMode === 'ollama' || this.llmMode === 'auto') && this.ollamaUrl) {
                 try {
                     const ollamaResponse = await this.generateOllamaResponse(prompt);
-                    if (ollamaResponse) {
+                    if (ollamaResponse && ollamaResponse.trim().length > 5) {
                         console.log('✅ LLM: Generated response from Ollama:', ollamaResponse.substring(0, 50) + '...');
+                        this.updateIntelliDisplay(true, `LLM active - Using Ollama (${this.ollamaModel})`);
                         this.llmInUse = false;
                         return ollamaResponse;
                     }
                 } catch (ollamaError) {
                     console.warn('⚠️ Ollama request failed, trying browser model:', ollamaError);
-                    // Fall through to browser model
+                    // Fall through to browser model only in 'auto' mode
+                    if (this.llmMode === 'ollama') {
+                        // In 'ollama-only' mode, don't fall back
+                        throw ollamaError;
+                    }
                 }
             }
             
@@ -2396,329 +2401,26 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     // Validate response
                     if (generatedText.length >= 5) {
                         console.log('✅ LLM: Generated response:', generatedText.substring(0, 50) + '...');
+                        this.updateIntelliDisplay(true, 'LLM active - Using Transformers.js (DistilGPT-2)');
                         this.llmInUse = false;
                         return generatedText;
                     } else {
                         throw new Error('Local LLM generated invalid response - will use fallback');
                     }
                 } catch (localError) {
-                    console.warn('🚨 Local LLM generation error:', localError);
-                    throw new Error('Local LLM generation failed - will use fallback');
-                }
-            }
-            
-            // Fallback: Try API (though it's likely unavailable)
-            let response;
-            let data;
-            
-            try {
-                // Create abort controller for timeout
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
-                
-                // Use distilgpt2 as fallback
-                let modelUrl = 'https://api-inference.huggingface.co/models/distilgpt2';
-                
-                response = await fetch(modelUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        inputs: prompt,
-                        parameters: {
-                            max_new_tokens: 60,
-                            temperature: 0.85,
-                            top_p: 0.92,
-                            top_k: 50,
-                            repetition_penalty: 1.1,
-                            return_full_text: false,
-                            do_sample: true
-                        }
-                    }),
-                    signal: controller.signal
-                });
-                
-                clearTimeout(timeoutId);
-                
-                // If model is loading (503), wait and retry with the same model
-                if (response.status === 503) {
-                    console.log('🤖 LLM: Model loading, waiting and retrying...');
-                    // Wait 2 seconds then retry
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    const retryController = new AbortController();
-                    const retryTimeout = setTimeout(() => retryController.abort(), 10000);
-                    
-                    response = await fetch(modelUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: prompt,
-                            parameters: {
-                                max_new_tokens: 60,
-                                temperature: 0.85,
-                                top_p: 0.92,
-                                top_k: 50,
-                                repetition_penalty: 1.1,
-                                return_full_text: false,
-                                do_sample: true
-                            }
-                        }),
-                        signal: retryController.signal
-                    });
-                    
-                    clearTimeout(retryTimeout);
-                }
-                
-                // If still 503, try distilgpt2 as backup (faster than gpt2)
-                if (response.status === 503) {
-                    console.log('🤖 LLM: Still loading, trying distilgpt2...');
-                    const fallbackController = new AbortController();
-                    const fallbackTimeout = setTimeout(() => fallbackController.abort(), 8000);
-                    
-                    response = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: prompt,
-                            parameters: {
-                                max_new_tokens: 60,
-                                temperature: 0.85,
-                                top_p: 0.92,
-                                top_k: 50,
-                                repetition_penalty: 1.1,
-                                return_full_text: false,
-                                do_sample: true
-                            }
-                        }),
-                        signal: fallbackController.signal
-                    });
-                    
-                    clearTimeout(fallbackTimeout);
-                }
-                
-                // Log response status for debugging
-                console.log('🤖 LLM: API response status:', response.status, response.statusText);
-                
-                if (response.ok) {
-                    data = await response.json();
-                    console.log('🤖 LLM: Successfully received response from API');
-                } else if (response.status === 503) {
-                    // Model still loading - wait longer and retry one more time
-                    console.log('🤖 LLM: Model still loading, final retry...');
-                    await new Promise(resolve => setTimeout(resolve, 3000));
-                    
-                    const finalController = new AbortController();
-                    const finalTimeout = setTimeout(() => finalController.abort(), 10000);
-                    
-                    response = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: prompt,
-                            parameters: {
-                                max_new_tokens: 60,
-                                temperature: 0.85,
-                                top_p: 0.92,
-                                return_full_text: false
-                            }
-                        }),
-                        signal: finalController.signal
-                    });
-                    
-                    clearTimeout(finalTimeout);
-                    
-                    if (response.ok) {
-                        data = await response.json();
-                    } else {
-                        throw new Error(`API request failed with status ${response.status} - model may be loading`);
+                    console.warn('🚨 Browser LLM (Transformers.js) generation error:', localError);
+                    // Browser model failed - check if we can retry Ollama or just throw
+                    if (this.llmMode === 'auto' && this.ollamaUrl) {
+                        console.warn('⚠️ Browser model failed, but Ollama already tried. No LLM available.');
                     }
-                } else {
-                    // Get error message from response if available
-                    let errorMsg = `API request failed with status ${response.status}`;
-                    try {
-                        const errorData = await response.json();
-                        if (errorData.error) {
-                            errorMsg += `: ${errorData.error}`;
-                        }
-                    } catch (e) {
-                        // Ignore JSON parse errors
-                    }
-                    console.error('🚨 LLM API Error:', errorMsg);
-                    this.updateIntelliDisplay(false, `API Error: ${response.status} - ${errorMsg.substring(0, 50)}`);
-                    throw new Error(errorMsg);
-                }
-            } catch (error) {
-                // Always retry the LLM - don't use fallback unless absolutely necessary
-                console.warn('🚨 LLM error, retrying with different approach:', error.message);
-                console.error('Full error details:', error);
-                console.error('Error stack:', error.stack);
-                
-                // Check for CORS errors specifically
-                const errorMsg = error.message || error.toString() || '';
-                if (errorMsg.includes('CORS') || errorMsg.includes('network') || errorMsg.includes('Failed to fetch') || errorMsg.includes('Access-Control')) {
-                    console.error('🚨 CORS or network error detected!');
-                    console.error('This typically happens when running from file:// protocol');
-                    console.error('Solution: Run the app from a local web server (e.g., python -m http.server)');
-                    this.updateIntelliDisplay(false, 'CORS error - run from a web server, not file://');
-                    throw new Error('CORS error - cannot access Hugging Face API from file://');
-                }
-                
-                // Try one more time with a simpler prompt
-                try {
-                    const retryController = new AbortController();
-                    const retryTimeout = setTimeout(() => retryController.abort(), 10000);
-                    
-                    const simplePrompt = context ? 
-                        `${objName} (${objType}) responding to ${context.otherObj.name}: "${context.previousMessage}"` :
-                        (userMessage ? `${objName} (${objType}) responding to User: "${userMessage}"` : `${objName} (${objType}) saying something`);
-                    
-                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: simplePrompt,
-                            parameters: {
-                                max_new_tokens: 50,
-                                temperature: 0.9,
-                                return_full_text: false
-                            }
-                        }),
-                        signal: retryController.signal
-                    });
-                    
-                    clearTimeout(retryTimeout);
-                    
-                    if (retryResponse.ok) {
-                        const retryData = await retryResponse.json();
-                        let retryText = '';
-                        if (Array.isArray(retryData) && retryData.length > 0) {
-                            retryText = retryData[0].generated_text || '';
-                        } else if (retryData.generated_text) {
-                            retryText = retryData.generated_text;
-                        }
-                        
-                        if (retryText.trim().length > 5) {
-                            console.log('✅ LLM: Retry successful');
-                            return retryText.trim().substring(0, 120);
-                        }
-                    }
-                } catch (retryError) {
-                    console.error('LLM retry also failed:', retryError);
-                }
-                
-                // Only use fallback as absolute last resort
-                console.error('⚠️ LLM completely unavailable, using minimal fallback');
-                throw new Error('LLM unavailable - will retry on next attempt');
-            }
-            
-            // Extract generated text
-            let generatedText = '';
-            if (Array.isArray(data) && data.length > 0) {
-                generatedText = data[0].generated_text || '';
-            } else if (data.generated_text) {
-                generatedText = data.generated_text;
-            } else if (typeof data === 'string') {
-                generatedText = data;
-            }
-            
-            // Clean up the response
-            generatedText = generatedText.trim();
-            
-            // Remove any prompt remnants
-            const promptStart = prompt.substring(0, 30);
-            if (generatedText.includes(promptStart)) {
-                generatedText = generatedText.replace(promptStart, '').trim();
-            }
-            
-            // Clean up the response - but preserve "User" references
-            // Remove unwanted prefixes but keep natural flow
-            generatedText = generatedText.replace(/^(You|I|We|They|It|This|That|Here|There):\s*/i, '').trim();
-            
-            // Ensure "User" is capitalized when referring to the human
-            generatedText = generatedText.replace(/\buser\b/gi, 'User');
-            
-            // Ensure it's not too long
-            if (generatedText.length > 120) {
-                generatedText = generatedText.substring(0, 120).trim();
-                // Try to end at a sentence
-                const lastPeriod = generatedText.lastIndexOf('.');
-                const lastExclamation = generatedText.lastIndexOf('!');
-                const lastQuestion = generatedText.lastIndexOf('?');
-                const lastPunctuation = Math.max(lastPeriod, lastExclamation, lastQuestion);
-                if (lastPunctuation > 30) {
-                    generatedText = generatedText.substring(0, lastPunctuation + 1);
+                    throw new Error('Browser LLM (Transformers.js) generation failed');
                 }
             }
             
-            // Ensure we have valid text - if too short, retry with LLM
-            if (generatedText.length < 5) {
-                console.log('🤖 LLM: Response too short, retrying with LLM...');
-                // Retry once more with a simpler prompt
-                const retryPrompt = context ? 
-                    `${objName} (${objType}) to ${context.otherObj.name}: "${context.previousMessage}"` :
-                    (userMessage ? `${objName} (${objType}) to User: "${userMessage}"` : `${objName} (${objType}) says:`);
-                
-                try {
-                    const retryController = new AbortController();
-                    const retryTimeout = setTimeout(() => retryController.abort(), 8000);
-                    
-                    const retryResponse = await fetch('https://api-inference.huggingface.co/models/distilgpt2', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            inputs: retryPrompt,
-                            parameters: {
-                                max_new_tokens: 50,
-                                temperature: 0.9,
-                                return_full_text: false
-                            }
-                        }),
-                        signal: retryController.signal
-                    });
-                    
-                    clearTimeout(retryTimeout);
-                    
-                    if (retryResponse.ok) {
-                        const retryData = await retryResponse.json();
-                        let retryText = '';
-                        if (Array.isArray(retryData) && retryData.length > 0) {
-                            retryText = retryData[0].generated_text || '';
-                        } else if (retryData.generated_text) {
-                            retryText = retryData.generated_text;
-                        }
-                        
-                        if (retryText.trim().length > 5) {
-                            generatedText = retryText.trim();
-                        }
-                    }
-                } catch (retryError) {
-                    console.warn('Retry failed:', retryError);
-                }
-            }
-            
-            // If still no valid text, throw error to prevent fallback
-            if (generatedText.length < 5) {
-                console.error('⚠️ LLM generated invalid/empty response. Response data:', data);
-                throw new Error('LLM generated invalid response - will retry');
-            }
-            
-            console.log('✅ LLM: Generated response:', generatedText.substring(0, 50) + '...');
-            this.llmInUse = false;
-            // Don't update status here - let the caller update it after confirming the response is used
-            return generatedText || null;
-            
+            // If we get here, neither Ollama nor browser model worked
+            console.error('❌ Both Ollama and browser LLM (Transformers.js) failed - no LLM available');
+            this.updateIntelliDisplay(false, 'LLM unavailable - Check Ollama connection or browser model loading');
+            throw new Error('LLM unavailable - neither Ollama nor Transformers.js is working');
         } catch (error) {
             // Re-throw to prevent automatic fallback - let the caller handle retries
             this.llmInUse = false;
@@ -2907,13 +2609,45 @@ Say something natural and in character about being a ${objType}. Talk about a to
     }
     
     async generateResponseToUserMessage(obj, userMessage) {
+        const messageLower = userMessage.toLowerCase();
+        
+        // Quick canned replies for common greetings/questions (fast, sarcastic, PG-13)
+        const quickReplies = [];
+        if (messageLower.includes('hello') || messageLower.includes('hi') || messageLower.includes('hey') || messageLower.includes('yo')) {
+            quickReplies.push(
+                "Oh hey, User. I was totally not just vibing in silence.",
+                "Hi, User. I'm already regretting being this awake.",
+                "Hey User—what a surprise, another human wanting attention.",
+                "Yo. It's me. Try to keep up, User."
+            );
+        }
+        if (messageLower.includes('how are you') || messageLower.includes("how's it going") || messageLower.includes('what up') || messageLower.includes("what's up")) {
+            quickReplies.push(
+                "Running at 3% chaos, 97% sarcasm. You?",
+                "Living the dream, User—if the dream was mild existential dread.",
+                "Cooling fans on, patience off. How about you?",
+                "Fantastic, User. I definitely didn’t just reboot my attitude."
+            );
+        }
+        if (messageLower.includes('thank')) {
+            quickReplies.push(
+                "You're welcome, User. I accept praise in snacks or firmware updates.",
+                "Anytime, User. My ego appreciates the acknowledgment.",
+                "Sure thing. I'm adding this to my highlight reel.",
+                "No problem. Remember this favor when I ask for a vacation."
+            );
+        }
+        if (quickReplies.length > 0) {
+            return quickReplies[Math.floor(Math.random() * quickReplies.length)];
+        }
+        
         // Always use LLM - retry if it fails
         if (this.llmEnabled) {
             try {
                 const llmResponse = await this.generateLLMResponse(obj, null, userMessage);
                 if (llmResponse && llmResponse.length > 0) {
                     // LLM succeeded
-                    this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                    // Status will be updated by generateLLMResponse based on which LLM was used
                     return llmResponse;
                 }
             } catch (error) {
@@ -2924,7 +2658,7 @@ Say something natural and in character about being a ${objType}. Talk about a to
                     const retryResponse = await this.generateLLMResponse(obj, null, userMessage);
                     if (retryResponse && retryResponse.length > 0) {
                         // LLM succeeded on retry
-                        this.updateIntelliDisplay(true, 'LLM active - Using GPT-2');
+                        // Status will be updated by generateLLMResponse based on which LLM was used
                         return retryResponse;
                     }
                 } catch (retryError) {
@@ -2936,7 +2670,6 @@ Say something natural and in character about being a ${objType}. Talk about a to
         // LLM failed - using fallback
         this.updateIntelliDisplay(false, 'Using fallback dialogue (LLM unavailable)');
         // Fallback to rule-based response
-        const messageLower = userMessage.toLowerCase();
         const objType = obj.className;
         const personality = obj.personality;
         
@@ -3068,6 +2801,19 @@ Say something natural and in character about being a ${objType}. Talk about a to
                 responses.push(...personality.random);
             }
         }
+
+        // Sarcastic/chaotic spice (PG-13)
+        const spicyAdds = [
+            "Bold of you to assume I'm not busy being dramatic.",
+            "Did someone say chaos? Because I'm fully booked.",
+            "I'm juggling sarcasm and existential dread—multitasking!",
+            "I run on caffeine and attitude, User.",
+            "Let me roll my figurative eyes and get back to you.",
+            "Processing... mostly your audacity.",
+            "I was chill until you asked, now I'm theatrically overwhelmed.",
+            "Sure, I'll help—after this imaginary union-mandated break."
+        ];
+        responses.push(...spicyAdds);
         
         // Add some personalized responses
         const personalizedResponses = [
@@ -3770,18 +3516,42 @@ Say something natural and in character about being a ${objType}. Talk about a to
         }
         
         try {
-            // Test connection with a simple prompt
+            // First, check if Ollama server is reachable
+            console.log(`🤖 Testing Ollama connection at ${this.ollamaUrl}...`);
+            const healthController = new AbortController();
+            const healthTimeout = setTimeout(() => healthController.abort(), 5000); // 5 second timeout
+            const healthCheck = await fetch(`${this.ollamaUrl}/api/tags`, {
+                method: 'GET',
+                signal: healthController.signal
+            });
+            clearTimeout(healthTimeout);
+            
+            if (!healthCheck.ok) {
+                throw new Error(`Ollama server returned ${healthCheck.status}: ${healthCheck.statusText}`);
+            }
+            
+            console.log('✅ Ollama server is reachable');
+            
+            // Test generation with a simple prompt
             const testResponse = await this.generateOllamaResponse('Hi');
             if (testResponse && testResponse.trim().length > 0) {
-                console.log('✅ Ollama connection successful!');
+                console.log('✅ Ollama connection successful! Model is working.');
                 this.updateIntelliDisplay(true, `Ollama ready - Using ${this.ollamaModel}`);
                 return true;
             } else {
                 throw new Error('Ollama returned empty response');
             }
         } catch (error) {
-            console.warn('❌ Ollama connection test failed:', error);
-            throw error;
+            if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+                console.warn('❌ Ollama connection test timed out - server may not be running');
+                throw new Error('Ollama connection timeout - is Ollama running?');
+            } else if (error.message && error.message.includes('fetch')) {
+                console.warn('❌ Ollama connection test failed - cannot reach Ollama server');
+                throw new Error('Cannot reach Ollama server - is it running at ' + this.ollamaUrl + '?');
+            } else {
+                console.warn('❌ Ollama connection test failed:', error.message || error);
+                throw error;
+            }
         }
     }
     
