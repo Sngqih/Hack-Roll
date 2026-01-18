@@ -2609,6 +2609,38 @@ Say something natural and in character about being a ${objType}. Talk about a to
     }
     
     async generateResponseToUserMessage(obj, userMessage) {
+        const messageLower = userMessage.toLowerCase();
+        
+        // Quick canned replies for common greetings/questions (fast, sarcastic, PG-13)
+        const quickReplies = [];
+        if (messageLower.includes('hello') || messageLower.includes('hi') || messageLower.includes('hey') || messageLower.includes('yo')) {
+            quickReplies.push(
+                "Oh hey, User. I was totally not just vibing in silence.",
+                "Hi, User. I'm already regretting being this awake.",
+                "Hey User—what a surprise, another human wanting attention.",
+                "Yo. It's me. Try to keep up, User."
+            );
+        }
+        if (messageLower.includes('how are you') || messageLower.includes("how's it going") || messageLower.includes('what up') || messageLower.includes("what's up")) {
+            quickReplies.push(
+                "Running at 3% chaos, 97% sarcasm. You?",
+                "Living the dream, User—if the dream was mild existential dread.",
+                "Cooling fans on, patience off. How about you?",
+                "Fantastic, User. I definitely didn’t just reboot my attitude."
+            );
+        }
+        if (messageLower.includes('thank')) {
+            quickReplies.push(
+                "You're welcome, User. I accept praise in snacks or firmware updates.",
+                "Anytime, User. My ego appreciates the acknowledgment.",
+                "Sure thing. I'm adding this to my highlight reel.",
+                "No problem. Remember this favor when I ask for a vacation."
+            );
+        }
+        if (quickReplies.length > 0) {
+            return quickReplies[Math.floor(Math.random() * quickReplies.length)];
+        }
+        
         // Always use LLM - retry if it fails
         if (this.llmEnabled) {
             try {
@@ -2638,7 +2670,6 @@ Say something natural and in character about being a ${objType}. Talk about a to
         // LLM failed - using fallback
         this.updateIntelliDisplay(false, 'Using fallback dialogue (LLM unavailable)');
         // Fallback to rule-based response
-        const messageLower = userMessage.toLowerCase();
         const objType = obj.className;
         const personality = obj.personality;
         
@@ -2770,6 +2801,19 @@ Say something natural and in character about being a ${objType}. Talk about a to
                 responses.push(...personality.random);
             }
         }
+
+        // Sarcastic/chaotic spice (PG-13)
+        const spicyAdds = [
+            "Bold of you to assume I'm not busy being dramatic.",
+            "Did someone say chaos? Because I'm fully booked.",
+            "I'm juggling sarcasm and existential dread—multitasking!",
+            "I run on caffeine and attitude, User.",
+            "Let me roll my figurative eyes and get back to you.",
+            "Processing... mostly your audacity.",
+            "I was chill until you asked, now I'm theatrically overwhelmed.",
+            "Sure, I'll help—after this imaginary union-mandated break."
+        ];
+        responses.push(...spicyAdds);
         
         // Add some personalized responses
         const personalizedResponses = [
