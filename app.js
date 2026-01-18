@@ -624,19 +624,43 @@ class TalkingObjectsApp {
     }
     
     generateObjectName(className) {
-        const names = {
-            'person': ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey'],
-            'laptop': ['Compy', 'Techy', 'Byte', 'Chip', 'Pixel'],
-            'phone': ['Phony', 'Dialer', 'Callie', 'Siri', 'Droid'],
-            'book': ['Story', 'Reader', 'Page', 'Novel', 'Chapter'],
-            'cup': ['Muggy', 'Cuppy', 'Tea Time', 'Java', 'Espresso'],
-            'bottle': ['Aqua', 'H2O', 'Flow', 'Liquid', 'Bubbly'],
-            'chair': ['Seaty', 'Comfy', 'Rest', 'Stool', 'Bench'],
-            'default': ['Buddy', 'Friend', 'Pal', 'Chum', 'Mate']
+        // Curated funny names for known objects
+        const knownNames = {
+            'person': ['Humanity', 'Personnes', 'Humandi', 'Soulian', 'Humanley'],
+            'laptop': ['Bytetrice', 'Codrian', 'Keyvan', 'Pixelia', 'Bytesworth', 'Screenworth', 'Keyworth'],
+            'phone': ['Ringaldo', 'Callista', 'Textopher', 'Signalina', 'Dialina', 'Textley'],
+            'book': ['Storytella', 'Pagerina', 'Readrick', 'Chapterin', 'Storyley', 'Pageton'],
+            'cup': ['Teaffony', 'Muggie', 'Brewson', 'Sipporah', 'Cupella', 'Steemia', 'Mugette', 'Sipley', 'Brewella'],
+            'bottle': ['Siphora', 'Caprice', 'Liquidrian', 'Pourcil', 'Sealbert', 'Corking', 'Plastina', 'Capstone', 'Pourley', 'Sealton'],
+            'chair': ['Sittany', 'Restopher', 'Comfrey', 'Seaton', 'Legolas', 'Cushbert', 'Backston', 'Sitwell', 'Restwood', 'Legston'],
+            'couch': ['Sofara', 'Relaxandra', 'Couchel', 'Cushelia', 'Loungevin', 'Recliney', 'Velvetra', 'Loungeworth', 'Cushworth', 'Sofaton'],
+            'keyboard': ['Keyvan', 'Boardney', 'Typeona', 'Qwertan', 'Enterina', 'Spacera', 'Typeworth', 'Enterston', 'Keyworth'],
+            'mouse': ['Clickson', 'Scrolliam', 'Cursorina', 'Dragston', 'Padworth', 'Scrollia', 'Scrollworth', 'Pointston', 'Clickton'],
+            'backpack': ['Packson', 'Carrlos', 'Strapina', 'Zipiah', 'Journeya', 'Shoulderton', 'Bagrick', 'Pacleton', 'Strapworth', 'Journeyston'],
+            'umbrella': ['Rainas', 'Sheltrina', 'Parabella', 'Canopya', 'Shieldon', 'Weatherley', 'Parasol', 'Rainton', 'Sheltworth', 'Weatherton'],
+            'handbag': ['Baggiana', 'Carryssa', 'Glamma', 'Pursela', 'Stylena', 'Fashionetta', 'Zippiola', 'Bagston', 'Styletto', 'Pursetta'],
+            'tie': ['Knottiam', 'Neckston', 'Formalina', 'Windsorina', 'Neckolas', 'Silkford', 'Stripolis', 'Knottworth', 'Neckwell', 'Silkton'],
+            'suitcase': ['Travelin', 'Journeya', 'Luggino', 'Tripton', 'Voyagio', 'Wheelston', 'Carryon', 'Travelworth', 'Luggton', 'Tripleton'],
+            'frisbee': ['Discelia', 'Flightley', 'Soarina', 'Throwbert', 'Spinney', 'Airlington', 'Coastward', 'Discworth', 'Throwston', 'Spinley'],
+            'sports_ball': ['Kickory', 'Scoreina', 'Gameson', 'Ballissa', 'Playden', 'Bouncelton', 'Kickila', 'Ballton', 'Kickworth', 'Scoreley'],
+            'kite': ['Skylar', 'Windney', 'Stringham', 'Flysabel', 'Floatina', 'Airelson', 'Zephyrin', 'Skyworth', 'Windston', 'Stringwell'],
+            'baseball_bat': ['Batrick', 'Swington', 'Slugmore', 'Homerunny', 'Crackton', 'Strikeford', 'Swindle', 'Swingworth', 'Batstone', 'Strikewell'],
+            'skateboard': ['Deckson', 'Tricktor', 'Grindley', 'Railston', 'Shredrick', 'Wheeliam', 'Kickflip', 'Trickston', 'Grindworth', 'Railley'],
+            'surfboard': ['Waverly', 'Ridley', 'Crestina', 'Hangifer', 'Tubiana', 'Tuberina', 'Tidesworth', 'Wavewell', 'Tubeworth', 'Tideston'],
+            'tennis_racket': ['Aceson', 'Servena', 'Rackton', 'Stringley', 'Volleyanna', 'Netting', 'Courtney', 'Stringworth', 'Servington', 'Netwell']
         };
         
-        const nameList = names[className] || names.default;
-        return nameList[Math.floor(Math.random() * nameList.length)];
+        // Regular names for unknown/default objects
+        const regularNames = ['Patrick', 'Sarah', 'James', 'Emma', 'Michael', 'Olivia', 'David', 'Sophia', 'Robert', 'Ava', 'Daniel', 'Isabella', 'Matthew', 'Mia', 'Joseph', 'Charlotte', 'Christopher', 'Amelia', 'Andrew', 'Harper'];
+        
+        // If we have a curated name, use it; otherwise use regular names for unknown objects
+        if (knownNames[className]) {
+            const nameList = knownNames[className];
+            return nameList[Math.floor(Math.random() * nameList.length)];
+        } else {
+            // For unknown objects, use regular names
+            return regularNames[Math.floor(Math.random() * regularNames.length)];
+        }
     }
     
     triggerConversations() {
@@ -1927,71 +1951,43 @@ class TalkingObjectsApp {
     }
     
     generateObjectName(className) {
-        // Pun-based names for each object type
-        const punNames = {
-            'laptop': ['Lappy', 'Compu-Terry', 'Mac-Beth', 'Dell-bert', 'ThinkPad-rick', 'Chromebook-ie', 'Surface-ace'],
-            'phone': ['Phoney', 'Cell-ebrity', 'iPhone-ia', 'Android-rew', 'Samsung-uel', 'Pixel-ine', 'Call-ie'],
-            'book': ['Book-ie', 'Novel-ette', 'Page-rick', 'Chapter-ine', 'Story-ella', 'Read-rick', 'Tome-y'],
-            'cup': ['Cuppy', 'Mug-gy', 'Tea-cup-ie', 'Java-ck', 'Espresso-ella', 'Latte-isha', 'Brew-ie'],
-            'bottle': ['Bottley', 'Aqua-rius', 'H2O-llie', 'Plastic-ky', 'Glass-ie', 'Cap-tain', 'Pour-rick'],
-            'chair': ['Chair-ie', 'Seat-rick', 'Stool-ie', 'Bench-ley', 'Throne-y', 'Recliner-ella', 'Cushion-ette'],
-            'couch': ['Couch-y', 'Sofa-ia', 'Lounger-ella', 'Divan-ielle', 'Settee-rick', 'Chesterfield-ie', 'Sofa-king-cool'],
-            'keyboard': ['Keys-y', 'Type-rick', 'QWERTY-ella', 'Click-y', 'Tap-ie', 'Key-ron', 'Board-ie'],
-            'mouse': ['Mouse-y', 'Click-ie', 'Scroll-ie', 'Pointer-ella', 'Cursor-ick', 'Track-y', 'Rodent-rick'],
-            'backpack': ['Pack-ie', 'Bag-rick', 'Rucksack-ie', 'Knapsack-ella', 'Carry-ie', 'Load-y', 'Travel-ella'],
-            'umbrella': ['Brell-ie', 'Rain-y', 'Para-sol-ie', 'Shade-rick', 'Cover-ella', 'Protect-ie', 'Shelter-ella'],
-            'handbag': ['Bag-ie', 'Purse-ella', 'Tote-ie', 'Clutch-ie', 'Satchel-ella', 'Carry-ie', 'Fashion-ella'],
-            'tie': ['Tie-dye', 'Neck-tie-rick', 'Knot-ie', 'Windsor-ella', 'Bow-ie', 'Formal-ie', 'Corporate-rick'],
-            'suitcase': ['Case-y', 'Luggage-ella', 'Trunk-ie', 'Valise-rick', 'Portmanteau-ie', 'Travel-ella', 'Journey-ie'],
-            'frisbee': ['Frisbee-ie', 'Disc-ie', 'Fly-rick', 'Catch-ie', 'Toss-ella', 'Spin-ie', 'Glide-rick'],
-            'sports_ball': ['Ball-ie', 'Sphere-rick', 'Bounce-ie', 'Round-ella', 'Game-ie', 'Play-rick', 'Sport-y'],
-            'kite': ['Kite-y', 'Fly-ie', 'Wind-rick', 'Sky-ella', 'Soar-ie', 'Glide-rick', 'Float-ella'],
-            'baseball_bat': ['Bat-ie', 'Swing-rick', 'Hit-ie', 'Wood-ella', 'Strike-ie', 'Home-run-rick', 'Pitch-ie'],
-            'skateboard': ['Skate-ie', 'Board-rick', 'Roll-ie', 'Trick-ella', 'Grind-ie', 'Ollie-rick', 'Rad-ie'],
-            'surfboard': ['Surf-ie', 'Wave-rick', 'Ride-ella', 'Shred-ie', 'Gnarly-rick', 'Beach-ie', 'Hang-ten-ella'],
-            'tennis_racket': ['Racket-ie', 'Swing-rick', 'Serve-ella', 'Match-ie', 'Court-rick', 'Net-ie', 'Ace-ella'],
-            // Additional common objects
-            'tv': ['TV-ie', 'Screen-ie', 'Tube-rick', 'Box-ella', 'Show-ie', 'Channel-rick', 'Remote-ella'],
-            'remote': ['Remote-ie', 'Click-rick', 'Control-ella', 'Button-ie', 'Zapper-rick', 'Clicker-ella'],
-            'microwave': ['Micro-ie', 'Wave-rick', 'Nuke-ella', 'Heat-ie', 'Cook-rick', 'Zap-ella'],
-            'oven': ['Oven-ie', 'Bake-rick', 'Roast-ella', 'Heat-ie', 'Cook-rick', 'Warm-ella'],
-            'toaster': ['Toast-ie', 'Pop-rick', 'Brown-ella', 'Crisp-ie', 'Warm-rick', 'Heat-ella'],
-            'sink': ['Sink-ie', 'Drain-rick', 'Wash-ella', 'Flow-ie', 'Tap-rick', 'Water-ella'],
-            'refrigerator': ['Fridge-ie', 'Cool-rick', 'Chill-ella', 'Cold-ie', 'Ice-rick', 'Freeze-ella'],
-            'bed': ['Bed-ie', 'Sleep-rick', 'Rest-ella', 'Pillow-ie', 'Dream-rick', 'Snore-ella'],
-            'dining_table': ['Table-ie', 'Dine-rick', 'Eat-ella', 'Feast-ie', 'Surface-rick', 'Top-ella'],
-            'toilet': ['Loo-ie', 'Flush-rick', 'Throne-ella', 'Seat-ie', 'Bowl-rick', 'Porcelain-ella'],
-            'bowl': ['Bowl-ie', 'Dish-rick', 'Serve-ella', 'Mix-ie', 'Hold-rick', 'Container-ella'],
-            'banana': ['Nana-ie', 'Peel-rick', 'Yellow-ella', 'Fruit-ie', 'Bunch-rick', 'Monkey-ella'],
-            'apple': ['Apple-ie', 'Core-rick', 'Red-ella', 'Fruit-ie', 'Tree-rick', 'Crisp-ella'],
-            'sandwich': ['Sandwich-ie', 'Bread-rick', 'Lunch-ella', 'Stack-ie', 'Layer-rick', 'Fill-ella'],
-            'car': ['Car-ie', 'Drive-rick', 'Wheel-ella', 'Auto-ie', 'Vroom-rick', 'Road-ella'],
-            'motorcycle': ['Bike-ie', 'Rev-rick', 'Ride-ella', 'Zoom-ie', 'Speed-rick', 'Cycle-ella'],
-            'bus': ['Bus-ie', 'Route-rick', 'Ride-ella', 'Transit-ie', 'Public-rick', 'Commute-ella'],
-            'truck': ['Truck-ie', 'Haul-rick', 'Load-ella', 'Big-ie', 'Cargo-rick', 'Freight-ella'],
-            'bicycle': ['Bike-ie', 'Pedal-rick', 'Cycle-ella', 'Wheel-ie', 'Ride-rick', 'Spin-ella']
+        // Curated funny names for known objects
+        const knownNames = {
+            'person': ['Humanity', 'Personnes', 'Humandi', 'Soulian', 'Humanley'],
+            'laptop': ['Bytetrice', 'Codrian', 'Keyvan', 'Pixelia', 'Bytesworth', 'Screenworth', 'Keyworth'],
+            'phone': ['Ringaldo', 'Callista', 'Textopher', 'Signalina', 'Dialina', 'Textley'],
+            'book': ['Storytella', 'Pagerina', 'Readrick', 'Chapterin', 'Storyley', 'Pageton'],
+            'cup': ['Teaffony', 'Muggie', 'Brewson', 'Sipporah', 'Cupella', 'Steemia', 'Mugette', 'Sipley', 'Brewella'],
+            'bottle': ['Siphora', 'Caprice', 'Liquidrian', 'Pourcil', 'Sealbert', 'Corking', 'Plastina', 'Capstone', 'Pourley', 'Sealton'],
+            'chair': ['Sittany', 'Restopher', 'Comfrey', 'Seaton', 'Legolas', 'Cushbert', 'Backston', 'Sitwell', 'Restwood', 'Legston'],
+            'couch': ['Sofara', 'Relaxandra', 'Couchel', 'Cushelia', 'Loungevin', 'Recliney', 'Velvetra', 'Loungeworth', 'Cushworth', 'Sofaton'],
+            'keyboard': ['Keyvan', 'Boardney', 'Typeona', 'Qwertan', 'Enterina', 'Spacera', 'Typeworth', 'Enterston', 'Keyworth'],
+            'mouse': ['Clickson', 'Scrolliam', 'Cursorina', 'Dragston', 'Padworth', 'Scrollia', 'Scrollworth', 'Pointston', 'Clickton'],
+            'backpack': ['Packson', 'Carrlos', 'Strapina', 'Zipiah', 'Journeya', 'Shoulderton', 'Bagrick', 'Pacleton', 'Strapworth', 'Journeyston'],
+            'umbrella': ['Rainas', 'Sheltrina', 'Parabella', 'Canopya', 'Shieldon', 'Weatherley', 'Parasol', 'Rainton', 'Sheltworth', 'Weatherton'],
+            'handbag': ['Baggiana', 'Carryssa', 'Glamma', 'Pursela', 'Stylena', 'Fashionetta', 'Zippiola', 'Bagston', 'Styletto', 'Pursetta'],
+            'tie': ['Knottiam', 'Neckston', 'Formalina', 'Windsorina', 'Neckolas', 'Silkford', 'Stripolis', 'Knottworth', 'Neckwell', 'Silkton'],
+            'suitcase': ['Travelin', 'Journeya', 'Luggino', 'Tripton', 'Voyagio', 'Wheelston', 'Carryon', 'Travelworth', 'Luggton', 'Tripleton'],
+            'frisbee': ['Discelia', 'Flightley', 'Soarina', 'Throwbert', 'Spinney', 'Airlington', 'Coastward', 'Discworth', 'Throwston', 'Spinley'],
+            'sports_ball': ['Kickory', 'Scoreina', 'Gameson', 'Ballissa', 'Playden', 'Bouncelton', 'Kickila', 'Ballton', 'Kickworth', 'Scoreley'],
+            'kite': ['Skylar', 'Windney', 'Stringham', 'Flysabel', 'Floatina', 'Airelson', 'Zephyrin', 'Skyworth', 'Windston', 'Stringwell'],
+            'baseball_bat': ['Batrick', 'Swington', 'Slugmore', 'Homerunny', 'Crackton', 'Strikeford', 'Swindle', 'Swingworth', 'Batstone', 'Strikewell'],
+            'skateboard': ['Deckson', 'Tricktor', 'Grindley', 'Railston', 'Shredrick', 'Wheeliam', 'Kickflip', 'Trickston', 'Grindworth', 'Railley'],
+            'surfboard': ['Waverly', 'Ridley', 'Crestina', 'Hangifer', 'Tubiana', 'Tuberina', 'Tidesworth', 'Wavewell', 'Tubeworth', 'Tideston'],
+            'tennis_racket': ['Aceson', 'Servena', 'Rackton', 'Stringley', 'Volleyanna', 'Netting', 'Courtney', 'Stringworth', 'Servington', 'Netwell']
         };
         
-        // Get pun names for this class
-        let names = punNames[className];
+        // Regular names for unknown/default objects
+        const regularNames = ['Patrick', 'Sarah', 'James', 'Emma', 'Michael', 'Olivia', 'David', 'Sophia', 'Robert', 'Ava', 'Daniel', 'Isabella', 'Matthew', 'Mia', 'Joseph', 'Charlotte', 'Christopher', 'Amelia', 'Andrew', 'Harper'];
         
-        // If no specific pun names, generate one from the class name
-        if (!names) {
-            const formatted = className.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
-            const base = formatted.split(' ')[0].toLowerCase();
-            const suffixes = ['-ie', '-rick', '-ella', '-ie', '-rick', '-ella'];
-            names = [
-                `${base}${suffixes[0]}`,
-                `${base}${suffixes[1]}`,
-                `${base}${suffixes[2]}`,
-                `${formatted}-ie`,
-                `${formatted}-rick`,
-                `${formatted}-ella`
-            ];
+        // If we have a curated name, use it; otherwise use regular names for unknown objects
+        if (knownNames[className]) {
+            const nameList = knownNames[className];
+            return nameList[Math.floor(Math.random() * nameList.length)];
+        } else {
+            // For unknown objects, use regular names
+            return regularNames[Math.floor(Math.random() * regularNames.length)];
         }
-        
-        // Return a random name from the list
-        return names[Math.floor(Math.random() * names.length)];
     }
     
     setupChat() {
